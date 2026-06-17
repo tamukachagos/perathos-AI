@@ -17,11 +17,12 @@ import {
   activityFeed,
   agentTeam,
   analytics,
-  launchSteps,
   navItems,
   providerAdapters,
 } from './platformData'
+import { evaluateAdapters, readinessScore, STATUS } from './adapters'
 import {
+  buildBusinessSchema,
   buildPublishedSite,
   getHashRoute,
   readPublishedSites,
@@ -30,27 +31,30 @@ import {
   writePublishedSites,
   writeStoredDraft,
 } from './siteEngine'
+import { initialsOf, isValidEmail, slugify, whatsappLink } from './format'
 
 const statusMeta = {
-  ready: { label: 'Ready', className: 'status-ready', icon: Check },
-  review: { label: 'Needs approval', className: 'status-review', icon: ShieldCheck },
-  pending: { label: 'Guided setup', className: 'status-pending', icon: Clock3 },
+  [STATUS.READY]: { label: 'Ready', className: 'status-ready', icon: Check },
+  [STATUS.REVIEW]: { label: 'Needs approval', className: 'status-review', icon: ShieldCheck },
+  [STATUS.PENDING]: { label: 'Guided setup', className: 'status-pending', icon: Clock3 },
 }
 
 function App() {
   const [business, setBusiness] = useState(readStoredDraft)
   const [publishedSites, setPublishedSites] = useState(readPublishedSites)
   const [route, setRoute] = useState(getHashRoute)
-  const [activeStep, setActiveStep] = useState('domain')
-  const [published, setPublished] = useState(false)
+  const [activeStep, setActiveStep] = useState('profile')
   const [agentRuns, setAgentRuns] = useState(3)
+  const [notice, setNotice] = useState('')
 
-  const readyCount = useMemo(
-    () => launchSteps.filter((step) => step.status === 'ready').length,
-    [],
-  )
+  const adapters = useMemo(() => evaluateAdapters(business), [business])
+  const publishProgress = useMemo(() => readinessScore(business), [business])
 
-  const publishProgress = published ? 100 : Math.round((readyCount / launchSteps.length) * 100)
+  // "Published" is derived from saved sites, so it survives refresh instead of
+  // being a transient flag that resets to a lower readiness on reload.
+  const ownSlug = slugify(business.name)
+  const published = Boolean(publishedSites[ownSlug])
+
   const latestSite = useMemo(() => {
     const sites = Object.values(publishedSites)
     return sites.sort((a, b) => a.publishedAt.localeCompare(b.publishedAt)).at(-1) || null
@@ -70,6 +74,13 @@ function App() {
     writePublishedSites(publishedSites)
   }, [publishedSites])
 
+  // Clear transient confirmations so they re-announce each time.
+  useEffect(() => {
+    if (!notice) return undefined
+    const timer = setTimeout(() => setNotice(''), 4000)
+    return () => clearTimeout(timer)
+  }, [notice])
+
   function updateBusiness(field, value) {
     setBusiness((current) => ({ ...current, [field]: value }))
   }
@@ -82,25 +93,31 @@ function App() {
         ? current.offer
         : `${current.offer} Now with same-week booking and WhatsApp confirmations.`,
     }))
+    setNotice('AI update drafted — review it in the preview before publishing.')
   }
 
   function publishDraft() {
-    const site = buildPublishedSite(business)
+    const site = buildPublishedSite(business, publishedSites)
     setPublishedSites((current) => ({ ...current, [site.slug]: site }))
-    setPublished(true)
-    window.location.hash = `/site/${site.slug}`
+    window.location.hash = `#/site/${site.slug}`
+    setNotice(`Published to #/site/${site.slug}`)
   }
 
-  function copySiteUrl(slug) {
+  async function copySiteUrl(slug) {
     const url = siteUrl(slug)
-    navigator.clipboard?.writeText(url)
+    try {
+      await navigator.clipboard?.writeText(url)
+      setNotice('Site link copied to clipboard.')
+    } catch {
+      setNotice(`Copy failed — here is your link: ${url}`)
+    }
   }
 
   if (route.type === 'site') {
     return (
       <PublishedSite
         onBack={() => {
-          window.location.hash = '/'
+          window.location.hash = '#/'
           setRoute({ type: 'dashboard' })
         }}
         site={publishedSites[route.slug]}
@@ -122,11 +139,15 @@ function App() {
         <nav className="nav-list">
           {navItems.map((item, index) => {
             const Icon = item.icon
+            const isActive = index === 0
             return (
               <button
-                className={index === 0 ? 'nav-item active' : 'nav-item'}
+                className={isActive ? 'nav-item active' : 'nav-item'}
                 key={item.label}
                 type="button"
+                aria-current={isActive ? 'page' : undefined}
+                aria-disabled={isActive ? undefined : true}
+                title={isActive ? undefined : 'Available once the workspace is connected'}
               >
                 <Icon size={17} strokeWidth={2.1} />
                 <span>{item.label}</span>
@@ -168,7 +189,18 @@ function App() {
           </div>
         </header>
 
-        <section className="readiness-band" aria-label="Launch readiness">
+        <p className="sr-status" role="status" aria-live="polite">
+          {notice}
+        </p>
+
+        <section
+          className="readiness-band"
+          aria-label="Launch readiness"
+          role="progressbar"
+          aria-valuenow={publishProgress}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
           <div>
             <span>Readiness</span>
             <strong>{publishProgress}%</strong>
@@ -178,8 +210,8 @@ function App() {
           </div>
           <p>
             {published
-              ? 'The launch bundle is packaged for deployment with approvals preserved.'
-              : 'Five systems are ready; domain and email need owner approval before automation proceeds.'}
+              ? 'Your site is live. Automated systems are ready; approval-gated steps are waiting on your sign-off.'
+              : 'Fill in the profile and connect WhatsApp to raise readiness; domain, email, and payments need your approval before automation proceeds.'}
           </p>
         </section>
 
@@ -188,6 +220,7 @@ function App() {
           <SitePreview business={business} latestSite={latestSite} />
           <LaunchChecklist
             activeStep={activeStep}
+            adapters={adapters}
             published={published}
             setActiveStep={setActiveStep}
           />
@@ -204,6 +237,15 @@ function App() {
 }
 
 function PublishedSite({ onBack, site }) {
+  useEffect(() => {
+    if (!site) return undefined
+    const previous = document.title
+    document.title = `${site.name} — ${site.location}`
+    return () => {
+      document.title = previous
+    }
+  }, [site])
+
   if (!site) {
     return (
       <main className="published-shell missing-site">
@@ -223,19 +265,27 @@ function PublishedSite({ onBack, site }) {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(site.publishedAt))
-  const whatsappHref = `https://wa.me/${site.whatsapp.replace(/\D/g, '')}`
+  const chatHref = whatsappLink(site.whatsapp, `Hi ${site.name}, I found your website and would like to know more.`)
+  const schema = buildBusinessSchema(site)
+
+  const scrollTo = (id) => () => {
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
     <main className="published-shell">
+      {/* Local SEO: structured data so the business can surface in Google's Local Pack / Maps. */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }} />
+
       <header className="published-header">
         <button className="ghost-button back-button" type="button" onClick={onBack}>
           <ArrowLeft size={16} />
           Launch Desk
         </button>
         <nav aria-label="Published site sections">
-          <a href="#services">Services</a>
-          <a href="#trust">Trust</a>
-          <a href="#contact">Contact</a>
+          <button type="button" className="anchor-link" onClick={scrollTo('services')}>Services</button>
+          <button type="button" className="anchor-link" onClick={scrollTo('trust')}>Trust</button>
+          <button type="button" className="anchor-link" onClick={scrollTo('contact')}>Contact</button>
         </nav>
       </header>
 
@@ -245,7 +295,7 @@ function PublishedSite({ onBack, site }) {
           <h1>{site.name}</h1>
           <p>{site.offer}</p>
           <div className="public-actions">
-            <a className="public-primary" href={whatsappHref} rel="noreferrer" target="_blank">
+            <a className="public-primary" href={chatHref} rel="noreferrer" target="_blank">
               WhatsApp us
             </a>
             <a className="public-secondary" href={`mailto:${site.email}`}>
@@ -255,7 +305,7 @@ function PublishedSite({ onBack, site }) {
         </div>
         <div className="public-visual" aria-label={`${site.name} visual identity`}>
           <div>
-            <strong>{site.name.split(' ').slice(0, 2).map((word) => word[0]).join('')}</strong>
+            <strong>{initialsOf(site.name)}</strong>
             <span>{site.location}</span>
           </div>
         </div>
@@ -292,24 +342,89 @@ function PublishedSite({ onBack, site }) {
       </section>
 
       <section className="public-contact" id="contact">
-        <div>
+        <div className="public-contact-intro">
           <h2>Ready to book?</h2>
           <p>{site.name} serves {site.location}. Reach out and we will respond from {site.email}.</p>
+          <div className="public-contact-actions">
+            <a className="public-primary" href={chatHref} rel="noreferrer" target="_blank">
+              Start WhatsApp chat
+            </a>
+            {site.domain ? (
+              <a className="public-secondary" href={`https://${site.domain}`} rel="noreferrer" target="_blank">
+                {site.domain}
+              </a>
+            ) : null}
+          </div>
         </div>
-        <div className="public-contact-actions">
-          <a className="public-primary" href={whatsappHref} rel="noreferrer" target="_blank">
-            Start WhatsApp chat
-          </a>
-          <a className="public-secondary" href={`https://${site.domain}`} rel="noreferrer" target="_blank">
-            {site.domain}
-          </a>
-        </div>
+        <LeadForm business={site.name} />
       </section>
     </main>
   )
 }
 
+// POPIA-by-default: a purpose statement, an un-ticked separate marketing opt-in,
+// and explicit consent that must be given before the enquiry can be sent.
+function LeadForm({ business }) {
+  const [form, setForm] = useState({ name: '', contact: '', message: '', consent: false, marketing: false })
+  const [sent, setSent] = useState(false)
+
+  const update = (field) => (event) => {
+    const value = event.target.type === 'checkbox' ? event.target.checked : event.target.value
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const onSubmit = (event) => {
+    event.preventDefault()
+    if (!form.consent) return
+    setSent(true)
+  }
+
+  if (sent) {
+    return (
+      <form className="lead-form" aria-live="polite">
+        <h3>Thank you</h3>
+        <p className="lead-confirm">{business} has your enquiry and will reply soon. You can withdraw consent at any time.</p>
+      </form>
+    )
+  }
+
+  return (
+    <form className="lead-form" onSubmit={onSubmit}>
+      <h3>Send an enquiry</h3>
+      <p className="lead-purpose">
+        We use your details only to respond to this enquiry. We never sell your data, and you can opt out at any time
+        (POPIA).
+      </p>
+      <label>
+        Your name
+        <input value={form.name} onChange={update('name')} required />
+      </label>
+      <label>
+        Phone or email
+        <input value={form.contact} onChange={update('contact')} required />
+      </label>
+      <label>
+        How can we help?
+        <textarea rows="3" value={form.message} onChange={update('message')} />
+      </label>
+      <label className="lead-check">
+        <input type="checkbox" checked={form.consent} onChange={update('consent')} required />
+        <span>I consent to {business} contacting me about this enquiry.</span>
+      </label>
+      <label className="lead-check">
+        <input type="checkbox" checked={form.marketing} onChange={update('marketing')} />
+        <span>Optional: send me occasional offers and updates.</span>
+      </label>
+      <button className="public-primary" type="submit" disabled={!form.consent}>
+        Send enquiry
+      </button>
+    </form>
+  )
+}
+
 function BusinessProfile({ business, updateBusiness }) {
+  const emailInvalid = business.email.trim().length > 0 && !isValidEmail(business.email)
+
   return (
     <section className="panel profile-panel">
       <div className="section-heading">
@@ -320,63 +435,79 @@ function BusinessProfile({ business, updateBusiness }) {
         <span className="quiet-tag">Step 1</span>
       </div>
 
-      <div className="field-grid">
-        <label>
+      <form className="field-grid" onSubmit={(event) => event.preventDefault()}>
+        <label htmlFor="bp-name">
           Business name
           <input
+            id="bp-name"
             value={business.name}
             onChange={(event) => updateBusiness('name', event.target.value)}
+            required
           />
         </label>
-        <label>
+        <label htmlFor="bp-industry">
           Industry
           <input
+            id="bp-industry"
             value={business.industry}
             onChange={(event) => updateBusiness('industry', event.target.value)}
           />
         </label>
-        <label>
+        <label htmlFor="bp-location">
           City or service area
           <input
+            id="bp-location"
             value={business.location}
             onChange={(event) => updateBusiness('location', event.target.value)}
           />
         </label>
-        <label>
+        <label htmlFor="bp-whatsapp">
           WhatsApp number
           <input
+            id="bp-whatsapp"
+            inputMode="tel"
             value={business.whatsapp}
             onChange={(event) => updateBusiness('whatsapp', event.target.value)}
           />
         </label>
-        <label>
+        <label htmlFor="bp-domain">
           Preferred domain
           <input
+            id="bp-domain"
             value={business.domain}
             onChange={(event) => updateBusiness('domain', event.target.value)}
           />
         </label>
-        <label>
+        <label htmlFor="bp-email">
           Business email
           <input
+            id="bp-email"
+            type="email"
             value={business.email}
             onChange={(event) => updateBusiness('email', event.target.value)}
+            aria-invalid={emailInvalid}
+            aria-describedby={emailInvalid ? 'bp-email-error' : undefined}
           />
+          {emailInvalid ? (
+            <small id="bp-email-error" className="field-error">Enter a valid email address.</small>
+          ) : null}
         </label>
-      </div>
+      </form>
 
-      <label className="wide-field">
+      <label className="wide-field" htmlFor="bp-offer">
         What do you offer?
         <textarea
+          id="bp-offer"
           rows="3"
           value={business.offer}
           onChange={(event) => updateBusiness('offer', event.target.value)}
         />
       </label>
 
-      <label className="wide-field">
+      <label className="wide-field" htmlFor="bp-services">
         Services or products
         <textarea
+          id="bp-services"
           rows="3"
           value={business.services}
           onChange={(event) => updateBusiness('services', event.target.value)}
@@ -406,7 +537,7 @@ function SitePreview({ business, latestSite }) {
           aria-label="Open preview"
           disabled={!latestSite}
           onClick={() => {
-            if (latestSite) window.location.hash = `/site/${latestSite.slug}`
+            if (latestSite) window.location.hash = `#/site/${latestSite.slug}`
           }}
         >
           <ExternalLink size={16} />
@@ -435,7 +566,7 @@ function SitePreview({ business, latestSite }) {
               </div>
             </div>
             <div className="photo-tile" aria-hidden="true">
-              <span>ZA</span>
+              <span>{initialsOf(business.name)}</span>
             </div>
           </div>
           <div className="service-row">
@@ -453,7 +584,7 @@ function SitePreview({ business, latestSite }) {
       {latestSite ? (
         <div className="published-route">
           <span>Live route</span>
-          <button type="button" onClick={() => { window.location.hash = `/site/${latestSite.slug}` }}>
+          <button type="button" onClick={() => { window.location.hash = `#/site/${latestSite.slug}` }}>
             #/site/{latestSite.slug}
           </button>
         </div>
@@ -462,8 +593,8 @@ function SitePreview({ business, latestSite }) {
   )
 }
 
-function LaunchChecklist({ activeStep, published, setActiveStep }) {
-  const selected = launchSteps.find((step) => step.id === activeStep) || launchSteps[0]
+function LaunchChecklist({ activeStep, adapters, published, setActiveStep }) {
+  const selected = adapters.find((step) => step.key === activeStep) || adapters[0]
   const SelectedIcon = selected.icon
 
   return (
@@ -473,19 +604,19 @@ function LaunchChecklist({ activeStep, published, setActiveStep }) {
           <h2>Ready to publish</h2>
           <p>Every integration is a provider adapter with audit and approval gates.</p>
         </div>
-        <span className={published ? 'quiet-tag success' : 'quiet-tag'}>{published ? 'Packaged' : 'Draft'}</span>
+        <span className={published ? 'quiet-tag success' : 'quiet-tag'}>{published ? 'Live' : 'Draft'}</span>
       </div>
 
       <div className="checklist">
-        {launchSteps.map((step) => {
+        {adapters.map((step) => {
           const Icon = step.icon
           const StatusIcon = statusMeta[step.status].icon
           return (
             <button
-              className={step.id === activeStep ? 'check-row selected' : 'check-row'}
-              key={step.id}
+              className={step.key === activeStep ? 'check-row selected' : 'check-row'}
+              key={step.key}
               type="button"
-              onClick={() => setActiveStep(step.id)}
+              onClick={() => setActiveStep(step.key)}
             >
               <span className="check-icon">
                 <Icon size={18} />

@@ -1,4 +1,6 @@
-import { initialBusiness, launchSteps } from './platformData'
+import { initialBusiness } from './platformData'
+import { launchAdapters, STATUS } from './adapters'
+import { slugify } from './format'
 
 const DRAFT_KEY = 'launchdesk:draft:v1'
 const SITES_KEY = 'launchdesk:sites:v1'
@@ -40,21 +42,18 @@ export function writePublishedSites(sites) {
   writeJson(SITES_KEY, sites)
 }
 
-export function slugify(value) {
-  const slug = value
-    .toLowerCase()
-    .replace(/&/g, ' and ')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+export { slugify }
 
-  return slug || 'new-business'
-}
-
+// Only treat hashes that start with "#/" as app routes. Bare fragments like
+// "#services" (in-page anchors on a published site) must NOT be parsed as routes,
+// otherwise clicking them navigates the visitor away from the site.
 export function getHashRoute() {
   if (typeof window === 'undefined') return { type: 'dashboard' }
 
-  const hash = window.location.hash.replace(/^#\/?/, '')
-  const [view, slug] = hash.split('/')
+  const hash = window.location.hash
+  if (!hash.startsWith('#/')) return { type: 'dashboard' }
+
+  const [view, slug] = hash.slice(2).split('/')
 
   if (view === 'site' && slug) {
     return { type: 'site', slug }
@@ -63,8 +62,23 @@ export function getHashRoute() {
   return { type: 'dashboard' }
 }
 
-export function buildPublishedSite(business) {
-  const slug = slugify(business.name)
+// Guarantee a unique slug so publishing a second "Joe's Shop" never silently
+// overwrites the first one.
+export function uniqueSlug(baseName, takenSlugs = []) {
+  const base = slugify(baseName)
+  const taken = new Set(takenSlugs)
+  if (!taken.has(base)) return base
+
+  let suffix = 2
+  while (taken.has(`${base}-${suffix}`)) suffix += 1
+  return `${base}-${suffix}`
+}
+
+export function buildPublishedSite(business, existingSites = {}) {
+  const ownSlug = slugify(business.name)
+  // Re-publishing the same business keeps its slug; a genuinely new name that
+  // collides with an existing site gets a numbered suffix.
+  const slug = existingSites[ownSlug] ? ownSlug : uniqueSlug(business.name, Object.keys(existingSites))
   const publishedAt = new Date().toISOString()
   const services = business.services
     .split(',')
@@ -76,15 +90,41 @@ export function buildPublishedSite(business) {
     slug,
     publishedAt,
     servicesList: services.length > 0 ? services : ['Consultation', 'Bookings', 'Customer support'],
-    launchRecord: launchSteps.map(({ id, title, provider, status }) => ({
-      id,
-      title,
-      provider,
-      status: status === 'review' ? 'approval-required' : status,
-    })),
+    launchRecord: launchAdapters.map((adapter) => {
+      const { status } = adapter.evaluate(business)
+      return {
+        id: adapter.key,
+        title: adapter.title,
+        provider: adapter.provider,
+        status: status === STATUS.REVIEW ? 'approval-required' : status,
+      }
+    }),
   }
 }
 
 export function siteUrl(slug) {
   return `${window.location.origin}${window.location.pathname}#/site/${slug}`
+}
+
+// Google-friendly structured data emitted on every published site. Helps the
+// site appear in the Local Pack / Maps, which for mobile-first SA discovery
+// often matters more than the website itself.
+export function buildBusinessSchema(site) {
+  const schema = {
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    name: site.name,
+    description: site.offer,
+    areaServed: site.location,
+    address: { '@type': 'PostalAddress', addressLocality: site.location, addressCountry: 'ZA' },
+  }
+  if (site.email) schema.email = site.email
+  if (site.domain) schema.url = `https://${site.domain}`
+  if (site.servicesList?.length) {
+    schema.makesOffer = site.servicesList.map((service) => ({
+      '@type': 'Offer',
+      itemOffered: { '@type': 'Service', name: service },
+    }))
+  }
+  return schema
 }
