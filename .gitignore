@@ -34,6 +34,16 @@ vite-dev.*.log
 # Local agent/dev tooling
 .claude/
 
+# Legacy Vite prototype files (replaced by Next.js in M0; OneDrive keeps resurrecting them)
+/src/App.jsx
+/src/App.css
+/src/index.css
+/src/main.jsx
+/src/format.js
+/src/adapters.js
+/src/platformData.js
+/src/siteEngine.js
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
