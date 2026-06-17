@@ -16,6 +16,7 @@ import type {
   LeadRecord,
   Repositories,
   SiteRecord,
+  SiteVersionRecord,
 } from "../types";
 import { prisma, withTenant } from "./client";
 
@@ -212,6 +213,69 @@ const sites = {
       return tx.generatedSite.update({
         where: { id: created.id },
         data: { currentVersionId: version.id },
+        include: { currentVersion: true },
+      });
+    });
+    return toSiteRecord(row);
+  },
+  async listVersions(
+    tenantId: string,
+    siteId: string,
+  ): Promise<SiteVersionRecord[]> {
+    return withTenant(tenantId, async (tx) => {
+      const site = await tx.generatedSite.findFirst({
+        where: { id: siteId, tenantId },
+        select: { currentVersionId: true },
+      });
+      const rows = await tx.siteVersion.findMany({
+        where: { siteId, tenantId },
+        orderBy: { version: "desc" },
+      });
+      return rows.map((row) => ({
+        id: row.id,
+        tenantId: row.tenantId,
+        siteId: row.siteId,
+        version: row.version,
+        site: row.snapshot as unknown as PublishedSite,
+        createdAt: row.createdAt.toISOString(),
+        isCurrent: row.id === site?.currentVersionId,
+      }));
+    });
+  },
+  async restoreVersion(
+    tenantId: string,
+    siteId: string,
+    version: number,
+  ): Promise<SiteRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const site = await tx.generatedSite.findFirst({
+        where: { id: siteId, tenantId },
+        include: { currentVersion: true },
+      });
+      if (!site) throw new Error(`Site ${siteId} not found for tenant`);
+      const target = await tx.siteVersion.findFirst({
+        where: { siteId, tenantId, version },
+      });
+      if (!target) {
+        throw new Error(`Version ${version} not found for site ${siteId}`);
+      }
+      // Forward-only rollback: append a new version copying the target snapshot.
+      const nextVersion = (site.currentVersion?.version ?? 0) + 1;
+      const created = await tx.siteVersion.create({
+        data: {
+          tenantId,
+          siteId,
+          version: nextVersion,
+          snapshot: target.snapshot as Prisma.InputJsonValue,
+        },
+      });
+      return tx.generatedSite.update({
+        where: { id: siteId },
+        data: {
+          status: "published",
+          publishedAt: new Date(),
+          currentVersionId: created.id,
+        },
         include: { currentVersion: true },
       });
     });

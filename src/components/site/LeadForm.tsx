@@ -3,9 +3,10 @@
 import { useState } from "react";
 
 // POPIA-by-default: a purpose statement, an un-ticked separate marketing opt-in,
-// and explicit consent that must be given before the enquiry can be sent.
-// (Ported verbatim from the prototype's LeadForm.)
-export function LeadForm({ business }: { business: string }) {
+// and explicit consent that must be given before the enquiry can be sent. On
+// submit the form POSTs to /api/leads, which persists the lead ONLY when consent
+// is true and records the consent timestamp + retention server-side.
+export function LeadForm({ business, slug }: { business: string; slug: string }) {
   const [form, setForm] = useState({
     name: "",
     contact: "",
@@ -13,7 +14,10 @@ export function LeadForm({ business }: { business: string }) {
     consent: false,
     marketing: false,
   });
-  const [sent, setSent] = useState(false);
+  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">(
+    "idle",
+  );
+  const [error, setError] = useState("");
 
   const update =
     (field: keyof typeof form) =>
@@ -26,13 +30,41 @@ export function LeadForm({ business }: { business: string }) {
       setForm((current) => ({ ...current, [field]: value }));
     };
 
-  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!form.consent) return;
-    setSent(true);
+    if (!form.consent || status === "sending") return;
+    setStatus("sending");
+    setError("");
+    try {
+      const res = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          slug,
+          name: form.name,
+          contact: form.contact,
+          message: form.message,
+          consent: form.consent,
+          marketingOptIn: form.marketing,
+        }),
+      });
+      if (!res.ok) {
+        setStatus("error");
+        setError(
+          res.status === 429
+            ? "Too many enquiries just now — please try again shortly."
+            : "We couldn't send your enquiry. Please try again.",
+        );
+        return;
+      }
+      setStatus("sent");
+    } catch {
+      setStatus("error");
+      setError("We couldn't send your enquiry. Please try again.");
+    }
   };
 
-  if (sent) {
+  if (status === "sent") {
     return (
       <form className="lead-form" aria-live="polite">
         <h3>Thank you</h3>
@@ -80,8 +112,17 @@ export function LeadForm({ business }: { business: string }) {
         />
         <span>Optional: send me occasional offers and updates.</span>
       </label>
-      <button className="public-primary" type="submit" disabled={!form.consent}>
-        Send enquiry
+      {status === "error" ? (
+        <p className="lead-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <button
+        className="public-primary"
+        type="submit"
+        disabled={!form.consent || status === "sending"}
+      >
+        {status === "sending" ? "Sending…" : "Send enquiry"}
       </button>
     </form>
   );

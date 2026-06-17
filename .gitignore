@@ -31,6 +31,9 @@ next-env.d.ts
 launch-desk-*.png
 vite-dev.*.log
 
+# Local agent/dev tooling
+.claude/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

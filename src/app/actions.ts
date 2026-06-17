@@ -5,41 +5,101 @@
 // In mock mode these run against the in-memory repo; with DATABASE_URL set they
 // run against Postgres — same call sites, no change.
 
+import { revalidatePath } from "next/cache";
 import type { Business } from "@/lib/types";
+import type { SiteVersionRecord } from "@/lib/db/types";
 import { requireTenant } from "@/lib/authz";
 import { getRepositories } from "@/lib/db";
 import { buildPublishedSite } from "@/lib/siteEngine";
+import { sanitizeBusiness, sanitizePublishedSite } from "@/lib/sanitize";
 
 /** Persist the tenant's primary business profile (the draft). */
 export async function saveBusinessAction(business: Business): Promise<void> {
   const ctx = await requireTenant();
   const repos = await getRepositories();
-  await repos.businesses.upsertPrimary(ctx.tenantId, business);
+  // Sanitize the draft on the way in so stored data is never raw markup.
+  await repos.businesses.upsertPrimary(ctx.tenantId, sanitizeBusiness(business));
 }
 
 /**
  * Publish the current draft to a versioned site record and return its slug.
- * Builds the PublishedSite snapshot from the saved business + existing sites so
- * slugs stay unique, mirroring the M0 client behaviour.
+ *
+ * Data flow: Business draft -> sanitizeBusiness -> buildPublishedSite (derives
+ * slug/servicesList/launchRecord) -> sanitizePublishedSite (defence in depth on
+ * the derived fields) -> sites.publish() appends a NEW site_versions row and
+ * re-points the GeneratedSite's currentVersion. An audit_log entry is written.
+ * Re-publishing the same business reuses the slug and increments the version.
+ *
+ * Mock mode (no DATABASE_URL): the whole flow runs against the in-memory repo,
+ * so it is exercisable with no DB. DB mode: identical call sites, Prisma impl.
  */
-export async function publishSiteAction(business: Business): Promise<{ slug: string }> {
+export async function publishSiteAction(
+  business: Business,
+): Promise<{ slug: string; version: number }> {
   const ctx = await requireTenant();
   const repos = await getRepositories();
 
-  const record = await repos.businesses.upsertPrimary(ctx.tenantId, business);
+  const clean = sanitizeBusiness(business);
+  const record = await repos.businesses.upsertPrimary(ctx.tenantId, clean);
 
   const existing = await repos.sites.listByTenant(ctx.tenantId);
   const existingSites = Object.fromEntries(existing.map((s) => [s.slug, s.site]));
-  const site = buildPublishedSite(business, existingSites);
+  const site = sanitizePublishedSite(buildPublishedSite(clean, existingSites));
 
-  await repos.sites.publish(ctx.tenantId, record.id, site);
+  const published = await repos.sites.publish(ctx.tenantId, record.id, site);
   await repos.audit.append(ctx.tenantId, {
     actorId: ctx.userId,
     action: "site.publish",
     targetType: "site",
     targetId: site.slug,
-    metadata: { slug: site.slug },
+    metadata: { slug: site.slug, version: published.version },
   });
 
-  return { slug: site.slug };
+  // Refresh the ISR cache for the public page so the new version is served.
+  revalidatePath(`/s/${site.slug}`);
+  return { slug: site.slug, version: published.version };
+}
+
+/** List a published site's version history (newest first), tenant-scoped. */
+export async function listSiteVersionsAction(
+  slug: string,
+): Promise<SiteVersionRecord[]> {
+  const ctx = await requireTenant();
+  const repos = await getRepositories();
+  const sites = await repos.sites.listByTenant(ctx.tenantId);
+  const site = sites.find((s) => s.slug === slug);
+  if (!site) return [];
+  return repos.sites.listVersions(ctx.tenantId, site.id);
+}
+
+/**
+ * Roll back a published site to a prior version. Appends a NEW version copying
+ * the target snapshot (forward-only history) and records an audit entry.
+ */
+export async function rollbackSiteAction(
+  slug: string,
+  version: number,
+): Promise<{ slug: string; version: number }> {
+  const ctx = await requireTenant();
+  const repos = await getRepositories();
+
+  const sites = await repos.sites.listByTenant(ctx.tenantId);
+  const site = sites.find((s) => s.slug === slug);
+  if (!site) throw new Error(`Site ${slug} not found for tenant`);
+
+  const restored = await repos.sites.restoreVersion(
+    ctx.tenantId,
+    site.id,
+    version,
+  );
+  await repos.audit.append(ctx.tenantId, {
+    actorId: ctx.userId,
+    action: "site.rollback",
+    targetType: "site",
+    targetId: slug,
+    metadata: { slug, restoredFrom: version, newVersion: restored.version },
+  });
+
+  revalidatePath(`/s/${slug}`);
+  return { slug, version: restored.version };
 }

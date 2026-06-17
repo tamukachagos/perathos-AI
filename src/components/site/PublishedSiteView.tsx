@@ -3,19 +3,33 @@ import { ArrowLeft } from "lucide-react";
 import type { PublishedSite } from "@/lib/types";
 import { initialsOf, whatsappLink } from "@/lib/format";
 import { buildBusinessSchema } from "@/lib/siteEngine";
+import { sanitizeUrl } from "@/lib/sanitize";
 import { LeadForm } from "./LeadForm";
 
 // Server-rendered public customer site. Ships minimal JS (only the LeadForm
 // island is client-side) and emits LocalBusiness JSON-LD server-side for SEO.
+//
+// SECURITY: site content is already sanitized at publish time, but every link
+// is also re-validated here against the URL-scheme allowlist (https/mailto/tel/
+// http) before it is rendered — so `javascript:`/`data:` payloads in an email
+// or domain field can never produce a live href, even from an old snapshot.
 export function PublishedSiteView({ site }: { site: PublishedSite }) {
   const publishedDate = new Intl.DateTimeFormat("en-ZA", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(site.publishedAt));
-  const chatHref = whatsappLink(
-    site.whatsapp,
-    `Hi ${site.name}, I found your website and would like to know more.`,
-  );
+  // whatsappLink only ever yields a https://wa.me/<digits> URL (digits are
+  // stripped of non-numerics in format.ts), so it is safe by construction; we
+  // still pass it through the allowlist for uniformity.
+  const chatHref =
+    sanitizeUrl(
+      whatsappLink(
+        site.whatsapp,
+        `Hi ${site.name}, I found your website and would like to know more.`,
+      ),
+    ) ?? null;
+  const mailHref = site.email ? sanitizeUrl(`mailto:${site.email}`) : null;
+  const domainHref = site.domain ? sanitizeUrl(`https://${site.domain}`) : null;
   const schema = buildBusinessSchema(site);
 
   return (
@@ -50,17 +64,21 @@ export function PublishedSiteView({ site }: { site: PublishedSite }) {
           <h1>{site.name}</h1>
           <p>{site.offer}</p>
           <div className="public-actions">
-            <a
-              className="public-primary"
-              href={chatHref}
-              rel="noreferrer"
-              target="_blank"
-            >
-              WhatsApp us
-            </a>
-            <a className="public-secondary" href={`mailto:${site.email}`}>
-              Send email
-            </a>
+            {chatHref ? (
+              <a
+                className="public-primary"
+                href={chatHref}
+                rel="noreferrer"
+                target="_blank"
+              >
+                WhatsApp us
+              </a>
+            ) : null}
+            {mailHref ? (
+              <a className="public-secondary" href={mailHref}>
+                Send email
+              </a>
+            ) : null}
           </div>
         </div>
         <div className="public-visual" aria-label={`${site.name} visual identity`}>
@@ -112,18 +130,20 @@ export function PublishedSiteView({ site }: { site: PublishedSite }) {
             from {site.email}.
           </p>
           <div className="public-contact-actions">
-            <a
-              className="public-primary"
-              href={chatHref}
-              rel="noreferrer"
-              target="_blank"
-            >
-              Start WhatsApp chat
-            </a>
-            {site.domain ? (
+            {chatHref ? (
+              <a
+                className="public-primary"
+                href={chatHref}
+                rel="noreferrer"
+                target="_blank"
+              >
+                Start WhatsApp chat
+              </a>
+            ) : null}
+            {domainHref ? (
               <a
                 className="public-secondary"
-                href={`https://${site.domain}`}
+                href={domainHref}
                 rel="noreferrer"
                 target="_blank"
               >
@@ -132,7 +152,7 @@ export function PublishedSiteView({ site }: { site: PublishedSite }) {
             ) : null}
           </div>
         </div>
-        <LeadForm business={site.name} />
+        <LeadForm business={site.name} slug={site.slug} />
       </section>
     </main>
   );

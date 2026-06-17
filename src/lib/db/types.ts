@@ -30,6 +30,18 @@ export interface SiteRecord {
   site: PublishedSite;
 }
 
+/** One entry in a site's append-only version history (for rollback). */
+export interface SiteVersionRecord {
+  id: string;
+  tenantId: string;
+  siteId: string;
+  version: number;
+  site: PublishedSite;
+  createdAt: string;
+  /** True when this version is the one currently published. */
+  isCurrent: boolean;
+}
+
 /** A POPIA-compliant lead captured by a published site's lead form. */
 export interface LeadRecord {
   id: string;
@@ -128,6 +140,18 @@ export interface SiteRepository {
     tenantId: string,
     businessId: string,
     site: PublishedSite,
+  ): Promise<SiteRecord>;
+  /** Full version history for a site (newest first), tenant-scoped. */
+  listVersions(tenantId: string, siteId: string): Promise<SiteVersionRecord[]>;
+  /**
+   * Roll back a site to a prior version by appending a NEW version whose
+   * snapshot is a copy of the target version's snapshot. History is never
+   * rewritten; rollback is forward-only.
+   */
+  restoreVersion(
+    tenantId: string,
+    siteId: string,
+    version: number,
   ): Promise<SiteRecord>;
 }
 

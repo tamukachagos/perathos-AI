@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Copy, LogIn, Play, Sparkles } from "lucide-react";
+import { Copy, History, LogIn, Play, Sparkles } from "lucide-react";
 import type { Business, PublishedSites } from "@/lib/types";
 import { evaluateAdapters, readinessScore } from "@/integrations/core/registry";
 import { buildPublishedSite } from "@/lib/siteEngine";
@@ -16,7 +16,13 @@ import {
   writeStoredDraft,
 } from "@/lib/clientStore";
 import { initialBusiness } from "@/lib/platformData";
-import { publishSiteAction, saveBusinessAction } from "@/app/actions";
+import type { SiteVersionRecord } from "@/lib/db/types";
+import {
+  listSiteVersionsAction,
+  publishSiteAction,
+  rollbackSiteAction,
+  saveBusinessAction,
+} from "@/app/actions";
 import { Sidebar } from "./Sidebar";
 import { BusinessProfile } from "./BusinessProfile";
 import { SitePreview } from "./SitePreview";
@@ -52,6 +58,8 @@ export function Dashboard({
   const [activeStep, setActiveStep] = useState("profile");
   const [agentRuns, setAgentRuns] = useState(3);
   const [notice, setNotice] = useState("");
+  const [versions, setVersions] = useState<SiteVersionRecord[] | null>(null);
+  const [versionsSlug, setVersionsSlug] = useState<string | null>(null);
   const migratedRef = useRef(false);
 
   useEffect(() => {
@@ -136,8 +144,9 @@ export function Dashboard({
   async function publishDraft() {
     if (authenticated) {
       try {
-        const { slug } = await publishSiteAction(business);
-        setNotice(`Published to /s/${slug}`);
+        const { slug, version } = await publishSiteAction(business);
+        setNotice(`Published /s/${slug} (v${version})`);
+        if (versionsSlug === slug) await loadVersions(slug);
         router.push(`/s/${slug}`);
         return;
       } catch {
@@ -150,6 +159,31 @@ export function Dashboard({
     setPublishedSites((current) => ({ ...current, [site.slug]: site }));
     setNotice(`Published to /s/${site.slug}`);
     router.push(`/s/${site.slug}`);
+  }
+
+  async function loadVersions(slug: string) {
+    if (!authenticated) {
+      setNotice("Sign in to view a site's version history.");
+      return;
+    }
+    try {
+      const list = await listSiteVersionsAction(slug);
+      setVersions(list);
+      setVersionsSlug(slug);
+    } catch {
+      setNotice("Could not load version history.");
+    }
+  }
+
+  async function rollback(slug: string, version: number) {
+    try {
+      const { version: newVersion } = await rollbackSiteAction(slug, version);
+      setNotice(`Rolled back ${slug} to v${version} (now v${newVersion}).`);
+      await loadVersions(slug);
+      router.refresh();
+    } catch {
+      setNotice("Rollback failed — please try again.");
+    }
   }
 
   async function copySiteUrl(slug: string) {
@@ -198,6 +232,16 @@ export function Dashboard({
               >
                 <Copy size={16} />
                 Copy site link
+              </button>
+            ) : null}
+            {authenticated && latestSite ? (
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => loadVersions(latestSite.slug)}
+              >
+                <History size={16} />
+                Versions
               </button>
             ) : null}
             <button className="primary-button" type="button" onClick={publishDraft}>
@@ -249,6 +293,53 @@ export function Dashboard({
           <AgentOps agentRuns={agentRuns} />
           <ArchitecturePanel />
         </section>
+
+        {versions && versionsSlug ? (
+          <section
+            className="version-panel"
+            aria-label={`Version history for ${versionsSlug}`}
+          >
+            <header className="version-panel-head">
+              <h2>Version history — /s/{versionsSlug}</h2>
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => {
+                  setVersions(null);
+                  setVersionsSlug(null);
+                }}
+              >
+                Close
+              </button>
+            </header>
+            {versions.length === 0 ? (
+              <p>No versions yet — publish the site to create one.</p>
+            ) : (
+              <ul className="version-list">
+                {versions.map((v) => (
+                  <li key={v.id}>
+                    <span>
+                      <strong>v{v.version}</strong>
+                      {v.isCurrent ? " · current" : ""}
+                    </span>
+                    <span className="version-when">
+                      {new Date(v.createdAt).toLocaleString("en-ZA")}
+                    </span>
+                    {!v.isCurrent ? (
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        onClick={() => rollback(versionsSlug, v.version)}
+                      >
+                        Roll back to v{v.version}
+                      </button>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ) : null}
       </main>
     </div>
   );

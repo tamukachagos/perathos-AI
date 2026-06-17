@@ -15,6 +15,7 @@ import type {
   LeadRecord,
   Repositories,
   SiteRecord,
+  SiteVersionRecord,
 } from "./types";
 import { seedBusiness, seedSite } from "./seed";
 
@@ -22,7 +23,8 @@ import { seedBusiness, seedSite } from "./seed";
 
 interface Store {
   businesses: Map<string, BusinessRecord>;
-  sites: Map<string, SiteRecord>; // keyed by slug
+  sites: Map<string, SiteRecord>; // keyed by slug (the CURRENT version)
+  siteVersions: SiteVersionRecord[]; // append-only history across all sites
   leads: LeadRecord[];
   audit: AuditEntry[];
   adapterConnections: Map<string, AdapterConnectionRecord>; // key `${tenantId}:${interfaceName}`
@@ -39,6 +41,17 @@ function createStore(): Store {
   return {
     businesses: new Map([[business.id, business]]),
     sites: new Map([[site.slug, site]]),
+    siteVersions: [
+      {
+        id: `ver_${site.id}_1`,
+        tenantId: site.tenantId,
+        siteId: site.id,
+        version: site.version,
+        site: site.site,
+        createdAt: site.site.publishedAt,
+        isCurrent: true,
+      },
+    ],
     leads: [],
     audit: [],
     adapterConnections: new Map(),
@@ -121,6 +134,9 @@ const sites = {
   ): Promise<SiteRecord> {
     const s = store();
     const existing = s.sites.get(site.slug);
+    if (existing && existing.tenantId !== tenantId) {
+      throw new Error(`Site ${site.slug} is owned by another tenant`);
+    }
     const record: SiteRecord = {
       id: existing?.id ?? nextId("site"),
       tenantId,
@@ -130,7 +146,50 @@ const sites = {
       site,
     };
     s.sites.set(site.slug, record);
+    // Append a new immutable version and re-point "current" to it.
+    for (const v of s.siteVersions) {
+      if (v.siteId === record.id) v.isCurrent = false;
+    }
+    s.siteVersions.push({
+      id: `ver_${record.id}_${record.version}`,
+      tenantId,
+      siteId: record.id,
+      version: record.version,
+      site,
+      createdAt: site.publishedAt ?? new Date().toISOString(),
+      isCurrent: true,
+    });
     return record;
+  },
+  async listVersions(
+    tenantId: string,
+    siteId: string,
+  ): Promise<SiteVersionRecord[]> {
+    return store()
+      .siteVersions.filter(
+        (v) => v.tenantId === tenantId && v.siteId === siteId,
+      )
+      .sort((a, b) => b.version - a.version)
+      .map((v) => ({ ...v }));
+  },
+  async restoreVersion(
+    tenantId: string,
+    siteId: string,
+    version: number,
+  ): Promise<SiteRecord> {
+    const s = store();
+    const target = s.siteVersions.find(
+      (v) => v.tenantId === tenantId && v.siteId === siteId && v.version === version,
+    );
+    if (!target) {
+      throw new Error(`Version ${version} not found for site ${siteId}`);
+    }
+    const current = [...s.sites.values()].find(
+      (site) => site.id === siteId && site.tenantId === tenantId,
+    );
+    if (!current) throw new Error(`Site ${siteId} not found for tenant`);
+    // Forward-only rollback: re-publish the target snapshot as a new version.
+    return this.publish(tenantId, current.businessId, target.site);
   },
 };
 
