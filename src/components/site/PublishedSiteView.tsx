@@ -14,7 +14,16 @@ import { ConsentBanner } from "./ConsentBanner";
 // is also re-validated here against the URL-scheme allowlist (https/mailto/tel/
 // http) before it is rendered — so `javascript:`/`data:` payloads in an email
 // or domain field can never produce a live href, even from an old snapshot.
-export function PublishedSiteView({ site }: { site: PublishedSite }) {
+// `showBranding` (M6): free-plan sites render a "Powered by Launch Desk" badge;
+// paid plans (Growth/Pro) suppress it. Defaults to true so any caller that does
+// not resolve a plan still shows branding (safe default).
+export function PublishedSiteView({
+  site,
+  showBranding = true,
+}: {
+  site: PublishedSite;
+  showBranding?: boolean;
+}) {
   const publishedDate = new Intl.DateTimeFormat("en-ZA", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -160,9 +169,16 @@ export function PublishedSiteView({ site }: { site: PublishedSite }) {
         <span>
           {site.name} · {site.location}
         </span>
-        <Link className="anchor-link" href="/privacy">
-          Privacy &amp; POPIA
-        </Link>
+        <div className="published-footer-meta">
+          {showBranding ? (
+            <Link className="powered-badge" href="/">
+              Powered by Launch Desk
+            </Link>
+          ) : null}
+          <Link className="anchor-link" href="/privacy">
+            Privacy &amp; POPIA
+          </Link>
+        </div>
       </footer>
 
       {/* POPIA: gates non-essential scripts until the visitor accepts. */}

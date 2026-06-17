@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Copy, History, LogIn, Play, Sparkles, Wand2 } from "lucide-react";
+import { CreditCard, Copy, History, LogIn, Play, Sparkles, Wand2 } from "lucide-react";
 import type { Business, PublishedSites } from "@/lib/types";
+import type { Entitlements } from "@/lib/billing/plans";
 import { evaluateAdapters, readinessScore } from "@/integrations/core/registry";
 import { buildPublishedSite } from "@/lib/siteEngine";
 import { slugify } from "@/lib/format";
@@ -37,17 +38,21 @@ interface GatedActionSpec {
   verb: string;
   label: string;
   payload: (business: Business) => Record<string, unknown>;
+  /** Paid-plan capability this action needs (M6); matches the server gate. */
+  requires?: keyof Entitlements;
 }
 const GATED_ACTION_BY_KEY: Record<string, GatedActionSpec> = {
   domain: {
     verb: "domain.register",
     label: "Register domain",
     payload: (b) => ({ domain: b.domain }),
+    requires: "customDomain",
   },
   payments: {
     verb: "payment.configure",
     label: "Configure payments",
     payload: (b) => ({ account: b.email || b.name }),
+    requires: "payments",
   },
   email: {
     verb: "email.provision",
@@ -63,13 +68,26 @@ interface DashboardProps {
   // anonymous, these are null and the dashboard uses the localStorage draft UX.
   initialBusiness?: Business | null;
   initialSites?: PublishedSites | null;
+  /** Current plan display name + entitlements (M6); default Free. */
+  planName?: string;
+  entitlements?: Entitlements;
 }
+
+const FREE_ENTITLEMENTS: Entitlements = {
+  maxSites: 1,
+  customDomain: false,
+  removeBranding: false,
+  payments: false,
+  prioritySupport: false,
+};
 
 export function Dashboard({
   authenticated = false,
   email = null,
   initialBusiness: serverBusiness = null,
   initialSites: serverSites = null,
+  planName = "Free",
+  entitlements = FREE_ENTITLEMENTS,
 }: DashboardProps) {
   const router = useRouter();
 
@@ -184,6 +202,14 @@ export function Dashboard({
       setNotice("Sign in to approve this action.");
       return;
     }
+    // UI gate mirrors the server: a paid-plan action is blocked for a free
+    // tenant here too, so the affordance leads to upgrade rather than a 403.
+    if (spec.requires && !entitlements[spec.requires]) {
+      setNotice(
+        `${spec.label} is a paid feature — upgrade your plan to unlock it.`,
+      );
+      return;
+    }
     setApproval(spec);
   }
 
@@ -256,6 +282,17 @@ export function Dashboard({
             </p>
           </div>
           <div className="topbar-actions">
+            <Link
+              className="plan-chip"
+              href={authenticated ? "/billing" : "/pricing"}
+              aria-label={`Current plan: ${planName}`}
+            >
+              <CreditCard size={14} />
+              {planName} plan
+            </Link>
+            <Link className="ghost-button" href="/pricing">
+              Upgrade
+            </Link>
             {authenticated ? (
               <span className="ghost-button" aria-label="Signed in">
                 {email ?? "Signed in"}

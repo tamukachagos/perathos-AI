@@ -1517,3 +1517,250 @@ input[aria-invalid='true'] {
   color: var(--muted);
 }
 
+/* --- M6: billing — plan chip, pricing, billing settings, branding badge --- */
+.plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--soft-blue);
+  color: var(--blue);
+  font-weight: 700;
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.plan-chip:hover {
+  border-color: var(--blue);
+}
+
+/* Pricing page */
+.pricing-shell,
+.billing-shell {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+}
+
+.pricing-head,
+.billing-head {
+  margin-bottom: 28px;
+}
+
+.pricing-head h1,
+.billing-head h1 {
+  color: var(--heading);
+  font-size: 28px;
+  margin: 8px 0 10px;
+}
+
+.pricing-head p,
+.billing-head p {
+  color: var(--muted);
+  max-width: 620px;
+  line-height: 1.55;
+}
+
+.pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px;
+}
+
+.pricing-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.pricing-card.featured {
+  border-color: var(--blue);
+  box-shadow: 0 18px 40px rgba(18, 58, 111, 0.14);
+}
+
+.pricing-badge {
+  position: absolute;
+  top: -11px;
+  left: 22px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.pricing-card h2 {
+  color: var(--heading);
+  font-size: 18px;
+  margin: 0;
+}
+
+.pricing-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+}
+
+.pricing-price strong {
+  color: var(--heading);
+  font-size: 30px;
+}
+
+.pricing-price span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pricing-tagline {
+  margin: 0;
+  color: var(--text);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.pricing-features {
+  list-style: none;
+  margin: 4px 0 auto;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.pricing-features li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.pricing-features svg {
+  color: var(--green);
+  flex-shrink: 0;
+}
+
+.pricing-card button {
+  margin-top: 8px;
+  width: 100%;
+  justify-content: center;
+}
+
+.pricing-foot,
+.billing-foot {
+  margin-top: 22px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.billing-error,
+.billing-notice {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.billing-error {
+  background: #fdecea;
+  color: #b42318;
+}
+
+.billing-notice {
+  background: var(--soft-blue);
+  color: var(--blue);
+}
+
+/* Billing settings */
+.billing-panel {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.billing-plan-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.billing-label {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.billing-plan-name {
+  color: var(--heading);
+  font-size: 22px;
+}
+
+.billing-status {
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--soft-blue);
+  color: var(--blue);
+}
+
+.billing-status-active {
+  background: #e7f5ee;
+  color: var(--green);
+}
+
+.billing-status-canceled,
+.billing-status-past_due {
+  background: #fdecea;
+  color: #b42318;
+}
+
+.billing-meta {
+  margin: 14px 0 0;
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.billing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* "Powered by Launch Desk" badge on free-plan published sites */
+.published-footer-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.powered-badge {
+  color: var(--blue);
+  font-weight: 700;
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.powered-badge:hover {
+  text-decoration: underline;
+}
+

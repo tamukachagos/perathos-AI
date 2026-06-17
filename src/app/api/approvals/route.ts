@@ -154,7 +154,7 @@ export async function PUT(request: Request) {
 
   const repos = await getRepositories();
   const outcome = await executeAction(
-    { audit: repos.audit },
+    { audit: repos.audit, subscriptions: repos.subscriptions },
     {
       tenantId: ctx.tenantId,
       actorId: ctx.userId,

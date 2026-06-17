@@ -3,6 +3,7 @@ import type { PublishedSite } from "@/lib/types";
 import { getMockSite, mockSiteSlugs } from "@/lib/mockSites";
 import { getRepositories } from "@/lib/db";
 import { sanitizePublishedSite } from "@/lib/sanitize";
+import { entitlementsForSubscription } from "@/lib/billing/service";
 import { ClientSiteFallback } from "@/components/site/ClientSiteFallback";
 import { PublishedSiteView } from "@/components/site/PublishedSiteView";
 
@@ -27,6 +28,22 @@ async function resolveSite(slug: string): Promise<PublishedSite | null> {
   // Defence in depth: re-sanitize whatever source served the snapshot before it
   // is rendered, so older/mock content can never carry live markup.
   return site ? sanitizePublishedSite(site) : null;
+}
+
+// Resolve whether a published site shows the "Powered by Launch Desk" badge:
+// free-plan tenants do (default true); paid tenants whose plan removes branding
+// don't. Resolved from the owning tenant's subscription. Defaults to true for
+// mock/unknown sites and any error — branding-on is the safe default.
+async function resolveShowBranding(slug: string): Promise<boolean> {
+  try {
+    const repos = await getRepositories();
+    const record = await repos.sites.getBySlug(slug);
+    if (!record) return true;
+    const sub = await repos.subscriptions.get(record.tenantId);
+    return !entitlementsForSubscription(sub).removeBranding;
+  } catch {
+    return true;
+  }
 }
 
 // Pre-render the known mock sites; other slugs render on demand.
@@ -59,7 +76,8 @@ export default async function PublishedSitePage({ params }: PageProps) {
   // Server-rendered (with JSON-LD) for any persisted/seeded site; client
   // fallback reads a just-published localStorage draft for anonymous use.
   if (site) {
-    return <PublishedSiteView site={site} />;
+    const showBranding = await resolveShowBranding(slug);
+    return <PublishedSiteView site={site} showBranding={showBranding} />;
   }
   return <ClientSiteFallback slug={slug} />;
 }

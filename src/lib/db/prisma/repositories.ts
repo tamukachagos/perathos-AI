@@ -17,7 +17,10 @@ import type {
   Repositories,
   SiteRecord,
   SiteVersionRecord,
+  SubscriptionInput,
+  SubscriptionRecord,
 } from "../types";
+import type { PlanId } from "@/lib/billing/plans";
 import { prisma, withTenant } from "./client";
 
 // --- Row → record mappers ----------------------------------------------------
@@ -487,10 +490,94 @@ const adapterConnections = {
   },
 };
 
+interface SubscriptionRow {
+  id: string;
+  tenantId: string;
+  plan: string;
+  status: string;
+  currentPeriodEnd: Date | null;
+  provider: string;
+  providerSubscriptionId: string | null;
+  cancelAtPeriodEnd: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toSubscriptionRecord(row: SubscriptionRow): SubscriptionRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    plan: row.plan as PlanId,
+    status: row.status as SubscriptionRecord["status"],
+    currentPeriodEnd: row.currentPeriodEnd?.toISOString() ?? null,
+    provider: row.provider,
+    providerSubscriptionId: row.providerSubscriptionId,
+    cancelAtPeriodEnd: row.cancelAtPeriodEnd,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const subscriptions = {
+  async get(tenantId: string): Promise<SubscriptionRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.subscription.findUnique({ where: { tenantId } }),
+    );
+    return row ? toSubscriptionRecord(row) : null;
+  },
+  async upsert(
+    tenantId: string,
+    input: SubscriptionInput,
+  ): Promise<SubscriptionRecord> {
+    const currentPeriodEnd =
+      input.currentPeriodEnd === undefined
+        ? undefined
+        : input.currentPeriodEnd
+          ? new Date(input.currentPeriodEnd)
+          : null;
+    const row = await withTenant(tenantId, (tx) =>
+      tx.subscription.upsert({
+        where: { tenantId },
+        create: {
+          tenantId,
+          plan: input.plan,
+          status: input.status,
+          currentPeriodEnd: currentPeriodEnd ?? null,
+          provider: input.provider ?? "mock",
+          providerSubscriptionId: input.providerSubscriptionId ?? null,
+          cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+        },
+        update: {
+          plan: input.plan,
+          status: input.status,
+          currentPeriodEnd,
+          provider: input.provider,
+          providerSubscriptionId: input.providerSubscriptionId,
+          cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+        },
+      }),
+    );
+    return toSubscriptionRecord(row);
+  },
+  // Cross-tenant lookup (no session): the webhook resolves the owning tenant
+  // from the provider's subscription id. Like the POPIA Cron/DSAR ops, this
+  // intentionally uses the base client; the webhook is signature-authenticated.
+  async getByProviderId(
+    provider: string,
+    providerSubscriptionId: string,
+  ): Promise<SubscriptionRecord | null> {
+    const row = await prisma.subscription.findFirst({
+      where: { provider, providerSubscriptionId },
+    });
+    return row ? toSubscriptionRecord(row) : null;
+  },
+};
+
 export const prismaRepositories: Repositories = {
   businesses,
   sites,
   leads,
   audit,
   adapterConnections,
+  subscriptions,
 };

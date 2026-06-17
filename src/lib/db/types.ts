@@ -11,6 +11,7 @@
 // Postgres impl additionally relies on RLS as a backstop.
 
 import type { Business, PublishedSite } from "@/lib/types";
+import type { PlanId } from "@/lib/billing/plans";
 
 // --- Records -----------------------------------------------------------------
 
@@ -81,6 +82,35 @@ export interface AdapterConnectionRecord {
   state: Record<string, unknown> | null;
 }
 
+/**
+ * A tenant's billing subscription (M6). One row per tenant (the active plan).
+ * In mock mode this is simulated end-to-end; with Paystack keys the same shape
+ * is driven by checkout + webhook events. Card data is NEVER stored here.
+ */
+export type SubscriptionStatus =
+  | "active"
+  | "trialing"
+  | "past_due"
+  | "canceled"
+  | "incomplete";
+
+export interface SubscriptionRecord {
+  id: string;
+  tenantId: string;
+  plan: PlanId;
+  status: SubscriptionStatus;
+  /** ISO timestamp the current paid period ends (null for Free). */
+  currentPeriodEnd: string | null;
+  /** Billing provider, e.g. "mock" now, "paystack" once live. */
+  provider: string;
+  /** The provider's subscription id (e.g. Paystack subscription code). */
+  providerSubscriptionId: string | null;
+  /** When true, the subscription will not renew at period end. */
+  cancelAtPeriodEnd: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // --- Inputs ------------------------------------------------------------------
 
 export interface LeadInput {
@@ -108,6 +138,16 @@ export interface AdapterConnectionInput {
   mode?: AdapterConnMode;
   status?: AdapterConnStatus;
   state?: Record<string, unknown> | null;
+}
+
+/** Fields settable when creating/updating a tenant's subscription (M6). */
+export interface SubscriptionInput {
+  plan: PlanId;
+  status: SubscriptionStatus;
+  currentPeriodEnd?: string | null;
+  provider?: string;
+  providerSubscriptionId?: string | null;
+  cancelAtPeriodEnd?: boolean;
 }
 
 // --- Repository interfaces (one per aggregate) -------------------------------
@@ -191,6 +231,27 @@ export interface AdapterConnectionRepository {
   ): Promise<AdapterConnectionRecord>;
 }
 
+export interface SubscriptionRepository {
+  /** The tenant's current subscription, or null if it has never had one. */
+  get(tenantId: string): Promise<SubscriptionRecord | null>;
+  /**
+   * Create or replace the tenant's subscription (one per tenant). Used by the
+   * upgrade flow and the webhook to set the plan + status.
+   */
+  upsert(
+    tenantId: string,
+    input: SubscriptionInput,
+  ): Promise<SubscriptionRecord>;
+  /**
+   * Look a subscription up by the provider's subscription id, ACROSS tenants —
+   * the webhook resolves the owning tenant from the provider id, not a session.
+   */
+  getByProviderId(
+    provider: string,
+    providerSubscriptionId: string,
+  ): Promise<SubscriptionRecord | null>;
+}
+
 /** The full data-access surface, assembled by the factory. */
 export interface Repositories {
   businesses: BusinessRepository;
@@ -198,4 +259,5 @@ export interface Repositories {
   leads: LeadRepository;
   audit: AuditRepository;
   adapterConnections: AdapterConnectionRepository;
+  subscriptions: SubscriptionRepository;
 }

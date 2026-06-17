@@ -1,6 +1,8 @@
 import type { Business, PublishedSites } from "@/lib/types";
 import { getCurrentTenant } from "@/lib/authz";
 import { getRepositories } from "@/lib/db";
+import { effectivePlan, entitlementsForSubscription } from "@/lib/billing/service";
+import { planFor, type Entitlements, type PlanId } from "@/lib/billing/plans";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 
 // Server component: resolves the session/tenant and, when authenticated, loads
@@ -12,6 +14,9 @@ export default async function Page() {
   let initialBusiness: Business | null = null;
   let initialSites: PublishedSites | null = null;
   let email: string | null = null;
+  // Default tier for anonymous/new tenants is Free.
+  let plan: PlanId = "free";
+  let entitlements: Entitlements = planFor("free").entitlements;
 
   if (ctx) {
     const repos = await getRepositories();
@@ -25,6 +30,10 @@ export default async function Page() {
     const sites = await repos.sites.listByTenant(ctx.tenantId);
     initialSites = Object.fromEntries(sites.map((s) => [s.slug, s.site]));
     email = ctx.email;
+
+    const sub = await repos.subscriptions.get(ctx.tenantId);
+    plan = effectivePlan(sub);
+    entitlements = entitlementsForSubscription(sub);
   }
 
   return (
@@ -33,6 +42,8 @@ export default async function Page() {
       email={email}
       initialBusiness={initialBusiness}
       initialSites={initialSites}
+      planName={planFor(plan).name}
+      entitlements={entitlements}
     />
   );
 }

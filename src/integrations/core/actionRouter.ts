@@ -16,7 +16,9 @@
 // NOT each re-implement gating — they route through here (see actions.ts).
 
 import type { Business } from "@/lib/types";
-import type { AuditRepository } from "@/lib/db/types";
+import type { AuditRepository, Repositories } from "@/lib/db/types";
+import type { FeatureKey } from "@/lib/billing/entitlements";
+import { checkEntitlement } from "@/lib/billing/entitlements";
 import { getAdapter } from "./registry";
 import type { ProviderInterface } from "./types";
 import {
@@ -44,6 +46,12 @@ export interface GatedVerbSpec {
   label: string;
   /** Pull the operation `target` out of the payload (for async verbs). */
   target?: (payload: Record<string, unknown>) => string;
+  /**
+   * Paid-plan entitlement this verb requires (M6). When set, the router checks
+   * the tenant's plan BEFORE the approval token, so a free tenant cannot even
+   * approve a paid action. Requires `subscriptions` in RouterDeps.
+   */
+  requiresEntitlement?: FeatureKey;
 }
 
 export const GATED_VERBS: Record<string, GatedVerbSpec> = {
@@ -52,12 +60,14 @@ export const GATED_VERBS: Record<string, GatedVerbSpec> = {
     async: true,
     label: "Register domain",
     target: (p) => String(p.domain ?? ""),
+    requiresEntitlement: "customDomain",
   },
   "dns.write": {
     interfaceName: "DnsProvider",
     async: false,
     label: "Write DNS records",
     target: (p) => String(p.domain ?? ""),
+    requiresEntitlement: "customDomain",
   },
   "hosting.publish": {
     interfaceName: "HostingProvider",
@@ -76,6 +86,7 @@ export const GATED_VERBS: Record<string, GatedVerbSpec> = {
     async: false,
     label: "Configure payments",
     target: (p) => String(p.account ?? ""),
+    requiresEntitlement: "payments",
   },
   "email.provision": {
     interfaceName: "EmailProvider",
@@ -127,7 +138,8 @@ export type DenyReason =
   | "verb_mismatch"
   | "idempotency_mismatch"
   | "replayed_token"
-  | "tenant_mismatch";
+  | "tenant_mismatch"
+  | "entitlement_required";
 
 /** Audit action names — one stream, allow/deny distinguished by suffix. */
 const AUDIT_ALLOW = "action.allowed";
@@ -135,6 +147,12 @@ const AUDIT_DENY = "action.denied";
 
 interface RouterDeps {
   audit: AuditRepository;
+  /**
+   * Subscriptions repo, required only to enforce paid-plan entitlements on verbs
+   * that carry `requiresEntitlement` (M6). Optional so existing call sites that
+   * pass only `audit` keep working; when absent, entitlement checks are skipped.
+   */
+  subscriptions?: Repositories["subscriptions"];
 }
 
 /**
@@ -182,6 +200,20 @@ export async function executeAction(
     await audit(AUDIT_DENY, { reason });
     return { status: "denied", reason, detail };
   };
+
+  // --- Entitlement gate (M6): a paid-plan verb is rejected for a free tenant
+  // BEFORE the approval token is even checked, so an unentitled action can't be
+  // approved. Skipped when the subscriptions repo isn't wired (back-compat).
+  if (spec?.requiresEntitlement && deps.subscriptions) {
+    const check = await checkEntitlement(
+      deps.subscriptions,
+      tenantId,
+      spec.requiresEntitlement,
+    );
+    if (!check.allowed) {
+      return deny("entitlement_required", check.detail);
+    }
+  }
 
   // --- Gating: gated verbs require a valid, payload-bound, single-use token ---
   if (spec) {

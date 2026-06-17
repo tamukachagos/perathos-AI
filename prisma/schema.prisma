@@ -114,6 +114,7 @@ model Tenant {
   leads               Lead[]
   adapterConnections  AdapterConnection[]
   auditLog            AuditLog[]
+  subscription        Subscription?
 
   @@map("tenants")
 }
@@ -344,6 +345,47 @@ model AdapterConnection {
   @@unique([tenantId, interfaceName])
   @@index([tenantId])
   @@map("adapter_connections")
+}
+
+// ---------------------------------------------------------------------------
+// Subscription — a tenant's billing plan + lifecycle state (M6). One per tenant.
+// A tenant with NO row is on the Free plan by default (entitlementsFor("free")).
+// Card data is NEVER stored here; only the provider's subscription reference.
+// In mock mode this is simulated end-to-end; with Paystack keys the same shape
+// is driven by checkout + signature-verified webhook events.
+// ---------------------------------------------------------------------------
+
+enum SubscriptionPlan {
+  free
+  growth
+  pro
+}
+
+enum SubscriptionStatus {
+  active
+  trialing
+  past_due
+  canceled
+  incomplete
+}
+
+model Subscription {
+  id                     String             @id @default(cuid())
+  tenantId               String             @unique
+  plan                   SubscriptionPlan   @default(free)
+  status                 SubscriptionStatus @default(active)
+  currentPeriodEnd       DateTime?
+  provider               String             @default("mock")
+  providerSubscriptionId String?
+  cancelAtPeriodEnd      Boolean            @default(false)
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([provider, providerSubscriptionId])
+  @@map("subscriptions")
 }
 
 // ---------------------------------------------------------------------------

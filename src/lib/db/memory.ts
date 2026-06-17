@@ -16,6 +16,8 @@ import type {
   Repositories,
   SiteRecord,
   SiteVersionRecord,
+  SubscriptionInput,
+  SubscriptionRecord,
 } from "./types";
 import { seedBusiness, seedSite } from "./seed";
 
@@ -28,6 +30,7 @@ interface Store {
   leads: LeadRecord[];
   audit: AuditEntry[];
   adapterConnections: Map<string, AdapterConnectionRecord>; // key `${tenantId}:${interfaceName}`
+  subscriptions: Map<string, SubscriptionRecord>; // keyed by tenantId
   seq: number;
 }
 
@@ -55,6 +58,8 @@ function createStore(): Store {
     leads: [],
     audit: [],
     adapterConnections: new Map(),
+    // The seeded dev tenant starts on Free (no row) — exactly the default tier.
+    subscriptions: new Map(),
     seq: 1,
   };
 }
@@ -293,12 +298,60 @@ const adapterConnections = {
   },
 };
 
+const subscriptions = {
+  async get(tenantId: string): Promise<SubscriptionRecord | null> {
+    return store().subscriptions.get(tenantId) ?? null;
+  },
+  async upsert(
+    tenantId: string,
+    input: SubscriptionInput,
+  ): Promise<SubscriptionRecord> {
+    const s = store();
+    const existing = s.subscriptions.get(tenantId);
+    const now = new Date().toISOString();
+    const record: SubscriptionRecord = {
+      id: existing?.id ?? nextId("sub"),
+      tenantId,
+      plan: input.plan,
+      status: input.status,
+      currentPeriodEnd:
+        input.currentPeriodEnd !== undefined
+          ? input.currentPeriodEnd
+          : existing?.currentPeriodEnd ?? null,
+      provider: input.provider ?? existing?.provider ?? "mock",
+      providerSubscriptionId:
+        input.providerSubscriptionId !== undefined
+          ? input.providerSubscriptionId
+          : existing?.providerSubscriptionId ?? null,
+      cancelAtPeriodEnd:
+        input.cancelAtPeriodEnd ?? existing?.cancelAtPeriodEnd ?? false,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    s.subscriptions.set(tenantId, record);
+    return record;
+  },
+  async getByProviderId(
+    provider: string,
+    providerSubscriptionId: string,
+  ): Promise<SubscriptionRecord | null> {
+    return (
+      [...store().subscriptions.values()].find(
+        (sub) =>
+          sub.provider === provider &&
+          sub.providerSubscriptionId === providerSubscriptionId,
+      ) ?? null
+    );
+  },
+};
+
 export const memoryRepositories: Repositories = {
   businesses,
   sites,
   leads,
   audit,
   adapterConnections,
+  subscriptions,
 };
 
 // Exposed for tests so they can run against a fresh store.
