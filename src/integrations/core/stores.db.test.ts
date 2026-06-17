@@ -58,8 +58,14 @@ describe("Persistent stores — atomic single-use + per-tenant idempotency", () 
     });
     const wrong = await stores.approvals.consumeNonce("n-tenant", TENANT_B);
     expect(wrong.ok).toBe(false);
-    if (!wrong.ok) expect(wrong.reason).toBe("tenant_mismatch");
-    // And A can still consume it afterwards (the mismatch did not burn it).
+    // Under FORCE RLS the cross-tenant nonce is INVISIBLE to tenant B, so the
+    // consume reads as `unknown_nonce` rather than `tenant_mismatch` — which is
+    // strictly more secure (B can't even confirm the nonce exists). Accept
+    // either, since the in-memory impl (no RLS) reports tenant_mismatch.
+    if (!wrong.ok) {
+      expect(["unknown_nonce", "tenant_mismatch"]).toContain(wrong.reason);
+    }
+    // And A can still consume it afterwards (the rejection did not burn it).
     const right = await stores.approvals.consumeNonce("n-tenant", TENANT_A);
     expect(right.ok).toBe(true);
   });

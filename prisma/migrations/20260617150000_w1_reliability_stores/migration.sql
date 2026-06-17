@@ -150,7 +150,12 @@ CREATE POLICY public_read_published_versions ON "site_versions"
 -- mutate anything else, so it does not widen the app role's surface.
 -- =========================================================================
 
-CREATE OR REPLACE FUNCTION reconcile_pending_operations(now_ts TIMESTAMP(3))
+-- NOTE: the time parameter is `timestamptz` (not `timestamp(3)`): the Prisma
+-- client binds a JS Date as `timestamptz`, so the function signature must match
+-- or Postgres reports "function ... does not exist" (no matching overload).
+-- `settleAt` is a naive-UTC `timestamp(3)`, so we compare against the param's
+-- UTC wall-clock (`AT TIME ZONE 'UTC'`) to stay timezone-correct.
+CREATE OR REPLACE FUNCTION reconcile_pending_operations(now_ts TIMESTAMPTZ)
 RETURNS INTEGER AS $$
 DECLARE
   settled_count INTEGER;
@@ -161,7 +166,7 @@ BEGIN
         "detail" = "verb" || ' for "' || "target" || '" completed.',
         "result" = jsonb_build_object('settledBy', 'cron-reconciliation'),
         "updatedAt" = now()
-    WHERE "status" = 'pending' AND "settleAt" <= now_ts
+    WHERE "status" = 'pending' AND "settleAt" <= (now_ts AT TIME ZONE 'UTC')
     RETURNING 1
   )
   SELECT count(*) INTO settled_count FROM updated;
@@ -183,14 +188,16 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- POPIA retention purge: delete every lead whose retentionUntil has elapsed,
 -- across all tenants. Returns the count deleted. (Cron-authenticated.)
-CREATE OR REPLACE FUNCTION purge_expired_leads(as_of TIMESTAMP(3))
+-- `as_of` is `timestamptz` to match the Prisma-bound JS Date (see the note on
+-- reconcile_pending_operations); compared against the naive-UTC column via UTC.
+CREATE OR REPLACE FUNCTION purge_expired_leads(as_of TIMESTAMPTZ)
 RETURNS INTEGER AS $$
 DECLARE
   deleted_count INTEGER;
 BEGIN
   WITH removed AS (
     DELETE FROM "leads"
-    WHERE "retentionUntil" IS NOT NULL AND "retentionUntil" <= as_of
+    WHERE "retentionUntil" IS NOT NULL AND "retentionUntil" <= (as_of AT TIME ZONE 'UTC')
     RETURNING 1
   )
   SELECT count(*) INTO deleted_count FROM removed;
