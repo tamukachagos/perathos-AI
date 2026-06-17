@@ -1764,3 +1764,136 @@ input[aria-invalid='true'] {
   text-decoration: underline;
 }
 
+/* W2 — Credits: dashboard balance chip + the /credits page panel. Owner-facing
+   values are always RAND with a usage bar; never tokens or model names. */
+.credits-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--heading);
+  font-weight: 700;
+  font-size: 12.5px;
+  text-decoration: none;
+}
+
+.credits-chip:hover {
+  border-color: var(--blue);
+}
+
+.credits-chip-amount {
+  color: var(--blue);
+}
+
+.credits-chip-bar {
+  display: inline-block;
+  width: 48px;
+  height: 6px;
+  border-radius: 999px;
+  background: #dfeaf3;
+  overflow: hidden;
+}
+
+.credits-chip-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--green), var(--blue));
+}
+
+.credits-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: var(--shadow);
+}
+
+.credits-amount {
+  display: block;
+  color: var(--heading);
+  font-size: 34px;
+  line-height: 1.1;
+  margin: 4px 0 8px;
+}
+
+.credits-usage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.credits-usage-head strong {
+  color: var(--heading);
+}
+
+.credits-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 12px;
+}
+
+.credits-presets .ghost-button.is-active {
+  border-color: var(--blue);
+  color: var(--blue);
+  background: var(--soft-blue);
+}
+
+.credits-topup {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.credits-history h2 {
+  color: var(--heading);
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+
+.credits-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.credits-history-list li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.credits-history-label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.credits-history-when {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.credits-history-amount {
+  color: var(--heading);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+

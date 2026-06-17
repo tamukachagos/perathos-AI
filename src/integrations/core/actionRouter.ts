@@ -19,6 +19,7 @@ import type { Business } from "@/lib/types";
 import type { AuditRepository, Repositories } from "@/lib/db/types";
 import type { FeatureKey } from "@/lib/billing/entitlements";
 import { checkEntitlement } from "@/lib/billing/entitlements";
+import { estimateVerbCostMicro } from "@/lib/billing/meteringConfig";
 import { getAdapter } from "./registry";
 import type { ProviderInterface } from "./types";
 import {
@@ -54,6 +55,15 @@ export interface GatedVerbSpec {
    * approve a paid action. Requires `subscriptions` in RouterDeps.
    */
   requiresEntitlement?: FeatureKey;
+  /**
+   * W2 — per-verb pre-flight cost estimate (ZAR micro-cents). When > 0 the
+   * router checks the wallet can cover it BEFORE doing work (requires `wallet`
+   * in RouterDeps), mirroring the entitlement gate. Defaults to the config
+   * estimate map (estimateVerbCostMicro) when unset; W3/W5 supply real numbers.
+   * A verb whose estimate resolves to 0 costs nothing to gate and is never
+   * blocked.
+   */
+  estimateMicro?: (payload: Record<string, unknown>) => bigint;
 }
 
 export const GATED_VERBS: Record<string, GatedVerbSpec> = {
@@ -149,6 +159,7 @@ export type DenyReason =
   | "replayed_token"
   | "tenant_mismatch"
   | "entitlement_required"
+  | "insufficient_credits"
   | "unknown_verb";
 
 /** Audit action names — one stream, allow/deny distinguished by suffix. */
@@ -165,6 +176,36 @@ interface RouterDeps {
    * rather than silently skipping the check.
    */
   subscriptions?: Repositories["subscriptions"];
+  /**
+   * W2 — the wallet repo, REQUIRED to dispatch any verb with a non-zero cost
+   * estimate. Like `subscriptions`, it is typed optional only so call sites that
+   * exclusively dispatch zero-cost verbs need not pass it; for a cost-bearing
+   * verb the credit gate FAILS CLOSED (denies `insufficient_credits`) when it is
+   * absent, rather than silently skipping the check.
+   */
+  wallet?: Repositories["wallet"];
+}
+
+/**
+ * W2 — Pre-flight credit gate helper. Returns whether the tenant's wallet can
+ * cover `estimateMicro` (ZAR micro-cents). An estimate of 0 (a free verb) always
+ * passes. This is the wallet analogue of checkEntitlement: deny BEFORE doing
+ * cost-bearing work. Exposed so other call sites (W3 LLM router, W5 hosting) can
+ * reuse the same pre-flight contract.
+ */
+export async function requireCredits(
+  walletRepo: Repositories["wallet"],
+  tenantId: string,
+  estimateMicro: bigint,
+): Promise<{ allowed: boolean; detail: string }> {
+  if (estimateMicro <= 0n) return { allowed: true, detail: "ok" };
+  const balance = await walletRepo.getBalance(tenantId);
+  if (balance >= estimateMicro) return { allowed: true, detail: "ok" };
+  return {
+    allowed: false,
+    detail:
+      "Your credit balance is too low for this action. Top up your credits to continue.",
+  };
 }
 
 /**
@@ -234,6 +275,29 @@ export async function executeAction(
     );
     if (!check.allowed) {
       return deny("entitlement_required", check.detail);
+    }
+  }
+
+  // --- W2 credit gate: a cost-bearing verb is denied BEFORE any work (and
+  // before the token is consumed) when the wallet cannot cover the estimated
+  // cost. The estimate comes from the verb's `estimateMicro` hook, or the config
+  // map (estimateVerbCostMicro) by default. A zero estimate means the verb is
+  // free to gate and is never blocked, so non-cost verbs are unaffected.
+  // FAIL CLOSED: if the estimate is > 0 but the wallet repo is not wired, we
+  // cannot prove the tenant can pay, so we DENY (never silently skip the gate).
+  const estimateMicro = spec?.estimateMicro
+    ? spec.estimateMicro(payload)
+    : estimateVerbCostMicro(verb);
+  if (estimateMicro > 0n) {
+    if (!deps.wallet) {
+      return deny(
+        "insufficient_credits",
+        "Credit balance could not be verified for this action.",
+      );
+    }
+    const credit = await requireCredits(deps.wallet, tenantId, estimateMicro);
+    if (!credit.allowed) {
+      return deny("insufficient_credits", credit.detail);
     }
   }
 

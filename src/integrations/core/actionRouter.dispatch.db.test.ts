@@ -43,15 +43,18 @@ async function approve(verb: string, payload: Record<string, unknown>, key: stri
 beforeEach(async () => {
   __resetStoreFactory();
   await resetDb();
-  // domain.register requires the customDomain entitlement → put A on Pro.
+  // domain.register requires the customDomain entitlement â†’ put A on Pro.
   await activatePlan(repos, TENANT_A, "pro");
+  // W2: domain.register also carries a credit estimate (~R249) â†’ fund the wallet
+  // so the pre-flight credit gate passes (this file tests async dispatch).
+  await repos.wallet.credit(TENANT_A, 100_000_000n); // R1000
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("B2 — async dispatch actually calls the adapter; failed is reachable", () => {
+describe("B2 â€” async dispatch actually calls the adapter; failed is reachable", () => {
   it("CALLS adapter.action() for an async gated verb", async () => {
     const spy = vi
       .spyOn(adapterRegistry.DomainProvider, "action")
@@ -60,7 +63,7 @@ describe("B2 — async dispatch actually calls the adapter; failed is reachable"
     const payload = { domain: "calls-adapter.co.za" };
     const token = await approve("domain.register", payload, "idem-call");
     const outcome = await executeAction(
-      { audit: repos.audit, subscriptions: repos.subscriptions },
+      { audit: repos.audit, subscriptions: repos.subscriptions, wallet: repos.wallet },
       {
         tenantId: TENANT_A,
         actorId: "u1",
@@ -78,7 +81,7 @@ describe("B2 — async dispatch actually calls the adapter; failed is reachable"
       expect.objectContaining({ verb: "domain.register" }),
     );
     if (outcome.status === "accepted") {
-      // ok:true → stays pending (webhook/cron would settle it later).
+      // ok:true â†’ stays pending (webhook/cron would settle it later).
       const op = await readOperation(outcome.operation.id, TENANT_A);
       expect(op?.status).toBe("pending");
     }
@@ -92,7 +95,7 @@ describe("B2 — async dispatch actually calls the adapter; failed is reachable"
     const payload = { domain: "rejected.co.za" };
     const token = await approve("domain.register", payload, "idem-rej");
     const outcome = await executeAction(
-      { audit: repos.audit, subscriptions: repos.subscriptions },
+      { audit: repos.audit, subscriptions: repos.subscriptions, wallet: repos.wallet },
       {
         tenantId: TENANT_A,
         actorId: "u1",
@@ -119,7 +122,7 @@ describe("B2 — async dispatch actually calls the adapter; failed is reachable"
     const payload = { domain: "threw.co.za" };
     const token = await approve("domain.register", payload, "idem-threw");
     const outcome = await executeAction(
-      { audit: repos.audit, subscriptions: repos.subscriptions },
+      { audit: repos.audit, subscriptions: repos.subscriptions, wallet: repos.wallet },
       {
         tenantId: TENANT_A,
         actorId: "u1",

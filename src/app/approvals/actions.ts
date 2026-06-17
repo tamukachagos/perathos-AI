@@ -131,7 +131,11 @@ export async function runGatedAction(
   const repos = await getRepositories();
 
   return executeAction(
-    { audit: repos.audit, subscriptions: repos.subscriptions },
+    {
+      audit: repos.audit,
+      subscriptions: repos.subscriptions,
+      wallet: repos.wallet,
+    },
     {
       tenantId: ctx.tenantId,
       actorId: ctx.userId,

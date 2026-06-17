@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { CreditCard, Copy, History, LogIn, Play, Sparkles, Wand2 } from "lucide-react";
+import { CreditCard, Copy, History, LogIn, Play, Sparkles, Wallet, Wand2 } from "lucide-react";
 import type { Business, PublishedSites } from "@/lib/types";
 import type { Entitlements } from "@/lib/billing/plans";
 import { evaluateAdapters, readinessScore } from "@/integrations/core/registry";
@@ -71,6 +71,10 @@ interface DashboardProps {
   /** Current plan display name + entitlements (M6); default Free. */
   planName?: string;
   entitlements?: Entitlements;
+  /** W2 — wallet balance in Rand display (e.g. "R10.00"); null when anonymous. */
+  creditsZar?: string | null;
+  /** W2 — this month's usage as a % of the soft allowance (0–100). */
+  creditsUsagePercent?: number;
 }
 
 const FREE_ENTITLEMENTS: Entitlements = {
@@ -88,6 +92,8 @@ export function Dashboard({
   initialSites: serverSites = null,
   planName = "Free",
   entitlements = FREE_ENTITLEMENTS,
+  creditsZar = null,
+  creditsUsagePercent = 0,
 }: DashboardProps) {
   const router = useRouter();
 
@@ -290,6 +296,20 @@ export function Dashboard({
               <CreditCard size={14} />
               {planName} plan
             </Link>
+            {authenticated && creditsZar ? (
+              <Link
+                className="credits-chip"
+                href="/credits"
+                aria-label={`Credit balance ${creditsZar}, ${creditsUsagePercent}% of this month's usage`}
+                title="Your prepaid credit balance"
+              >
+                <Wallet size={14} />
+                <span className="credits-chip-amount">{creditsZar}</span>
+                <span className="credits-chip-bar" aria-hidden="true">
+                  <span style={{ width: `${creditsUsagePercent}%` }} />
+                </span>
+              </Link>
+            ) : null}
             <Link className="ghost-button" href="/pricing">
               Upgrade
             </Link>

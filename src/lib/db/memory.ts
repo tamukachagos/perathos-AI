@@ -11,6 +11,9 @@ import type {
   AuditEntry,
   AuditInput,
   BusinessRecord,
+  DebitResult,
+  InvoiceRecord,
+  InvoiceStatus,
   LeadInput,
   LeadRecord,
   Repositories,
@@ -18,8 +21,11 @@ import type {
   SiteVersionRecord,
   SubscriptionInput,
   SubscriptionRecord,
+  UsageRecordInput,
+  UsageRecordRow,
+  WalletRecord,
 } from "./types";
-import { seedBusiness, seedSite } from "./seed";
+import { DEV_TENANT_ID, seedBusiness, seedSite } from "./seed";
 
 // --- Module-level store (one per server process) ----------------------------
 
@@ -34,6 +40,9 @@ interface Store {
   audit: AuditEntry[];
   adapterConnections: Map<string, AdapterConnectionRecord>; // key `${tenantId}:${interfaceName}`
   subscriptions: Map<string, SubscriptionRecord>; // keyed by tenantId
+  wallets: Map<string, WalletRecord>; // keyed by tenantId
+  usage: UsageRecordRow[]; // append-only across all tenants
+  invoices: Map<string, InvoiceRecord>; // keyed by `${tenantId}:${period}`
   seq: number;
 }
 
@@ -63,6 +72,21 @@ function createStore(): Store {
     adapterConnections: new Map(),
     // The seeded dev tenant starts on Free (no row) — exactly the default tier.
     subscriptions: new Map(),
+    // Seed the dev tenant with a small starter grant (~R10) so the Credits UX
+    // is exercisable with no DB and no top-up — mirrors the Free "tiny grant".
+    wallets: new Map([
+      [
+        DEV_TENANT_ID,
+        {
+          id: "wallet-dev",
+          tenantId: DEV_TENANT_ID,
+          balanceMicro: 1_000_000n, // R10 = 1_000_000 micro-cents
+          updatedAt: "2026-01-01T08:00:00.000Z",
+        },
+      ],
+    ]),
+    usage: [],
+    invoices: new Map(),
     seq: 1,
   };
 }
@@ -363,6 +387,149 @@ const subscriptions = {
   },
 };
 
+// --- W2 metering wallet (mock) ----------------------------------------------
+// Single-process, so the "atomic" debit is trivially atomic under JS's
+// run-to-completion: nothing can interleave between the conflict check and the
+// balance mutation. The Postgres impl is what makes it survive concurrency +
+// multiple processes; this mirrors its CONTRACT exactly (exactly-once on
+// duplicate idempotencyKey, never double-debit).
+
+function walletKey(tenantId: string, period: string): string {
+  return `${tenantId}:${period}`;
+}
+
+const wallet = {
+  async get(tenantId: string): Promise<WalletRecord | null> {
+    return store().wallets.get(tenantId) ?? null;
+  },
+  async getBalance(tenantId: string): Promise<bigint> {
+    return store().wallets.get(tenantId)?.balanceMicro ?? 0n;
+  },
+  async credit(tenantId: string, amountMicro: bigint): Promise<bigint> {
+    const s = store();
+    const existing = s.wallets.get(tenantId);
+    const next: WalletRecord = {
+      id: existing?.id ?? nextId("wallet"),
+      tenantId,
+      balanceMicro: (existing?.balanceMicro ?? 0n) + amountMicro,
+      updatedAt: new Date().toISOString(),
+    };
+    s.wallets.set(tenantId, next);
+    return next.balanceMicro;
+  },
+  async debit(tenantId: string, input: UsageRecordInput): Promise<DebitResult> {
+    const s = store();
+    // Exactly-once: a prior row with the same (tenantId, idempotencyKey) makes
+    // this a no-op returning the prior record + current balance.
+    const prior = s.usage.find(
+      (u) => u.tenantId === tenantId && u.idempotencyKey === input.idempotencyKey,
+    );
+    if (prior) {
+      return {
+        applied: false,
+        balanceMicro: s.wallets.get(tenantId)?.balanceMicro ?? 0n,
+        record: prior,
+      };
+    }
+    // Append the usage row.
+    const record: UsageRecordRow = {
+      id: nextId("usage"),
+      tenantId,
+      kind: input.kind,
+      quantity: input.quantity,
+      unitCostMicro: input.unitCostMicro,
+      unitPriceMicro: input.unitPriceMicro,
+      amountMicro: input.amountMicro,
+      period: input.period,
+      idempotencyKey: input.idempotencyKey,
+      createdAt: new Date().toISOString(),
+    };
+    s.usage.push(record);
+    // Debit the wallet (create it at zero first if needed) in the same "tx".
+    const existing = s.wallets.get(tenantId);
+    const w: WalletRecord = {
+      id: existing?.id ?? nextId("wallet"),
+      tenantId,
+      balanceMicro: (existing?.balanceMicro ?? 0n) - input.amountMicro,
+      updatedAt: new Date().toISOString(),
+    };
+    s.wallets.set(tenantId, w);
+    return { applied: true, balanceMicro: w.balanceMicro, record };
+  },
+};
+
+const usage = {
+  async append(
+    tenantId: string,
+    input: UsageRecordInput,
+  ): Promise<UsageRecordRow> {
+    const record: UsageRecordRow = {
+      id: nextId("usage"),
+      tenantId,
+      kind: input.kind,
+      quantity: input.quantity,
+      unitCostMicro: input.unitCostMicro,
+      unitPriceMicro: input.unitPriceMicro,
+      amountMicro: input.amountMicro,
+      period: input.period,
+      idempotencyKey: input.idempotencyKey,
+      createdAt: new Date().toISOString(),
+    };
+    store().usage.push(record);
+    return record;
+  },
+  async listByPeriod(
+    tenantId: string,
+    period: string,
+  ): Promise<UsageRecordRow[]> {
+    return store()
+      .usage.filter((u) => u.tenantId === tenantId && u.period === period)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+  async listRecent(tenantId: string, limit = 20): Promise<UsageRecordRow[]> {
+    return store()
+      .usage.filter((u) => u.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit);
+  },
+};
+
+const invoices = {
+  async get(tenantId: string, period: string): Promise<InvoiceRecord | null> {
+    return store().invoices.get(walletKey(tenantId, period)) ?? null;
+  },
+  async upsert(
+    tenantId: string,
+    period: string,
+    totalMicro: bigint,
+    status: InvoiceStatus = "open",
+    providerInvoiceId: string | null = null,
+  ): Promise<InvoiceRecord> {
+    const s = store();
+    const key = walletKey(tenantId, period);
+    const existing = s.invoices.get(key);
+    const now = new Date().toISOString();
+    const record: InvoiceRecord = {
+      id: existing?.id ?? nextId("inv"),
+      tenantId,
+      period,
+      totalMicro,
+      status,
+      providerInvoiceId:
+        providerInvoiceId ?? existing?.providerInvoiceId ?? null,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    s.invoices.set(key, record);
+    return record;
+  },
+  async list(tenantId: string): Promise<InvoiceRecord[]> {
+    return [...store().invoices.values()]
+      .filter((i) => i.tenantId === tenantId)
+      .sort((a, b) => b.period.localeCompare(a.period));
+  },
+};
+
 export const memoryRepositories: Repositories = {
   businesses,
   sites,
@@ -370,6 +537,9 @@ export const memoryRepositories: Repositories = {
   audit,
   adapterConnections,
   subscriptions,
+  wallet,
+  usage,
+  invoices,
 };
 
 // Exposed for tests so they can run against a fresh store.

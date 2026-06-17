@@ -16,6 +16,7 @@ export async function truncateAll(): Promise<void> {
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
       "approval_nonces","operations","webhook_events",
+      "token_wallets","usage_records","invoices",
       "audit_log","leads","site_versions","generated_sites",
       "businesses","subscriptions","adapter_connections","memberships","tenants"
     RESTART IDENTITY CASCADE;

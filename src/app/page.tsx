@@ -3,6 +3,12 @@ import { getCurrentTenant } from "@/lib/authz";
 import { getRepositories } from "@/lib/db";
 import { effectivePlan, entitlementsForSubscription } from "@/lib/billing/service";
 import { planFor, type Entitlements, type PlanId } from "@/lib/billing/plans";
+import { getBalance } from "@/lib/billing/metering";
+import {
+  currentPeriod,
+  formatMicroZar,
+  MICRO_PER_RAND,
+} from "@/lib/billing/meteringConfig";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 
 // Server component: resolves the session/tenant and, when authenticated, loads
@@ -17,6 +23,8 @@ export default async function Page() {
   // Default tier for anonymous/new tenants is Free.
   let plan: PlanId = "free";
   let entitlements: Entitlements = planFor("free").entitlements;
+  let creditsZar: string | null = null;
+  let creditsUsagePercent = 0;
 
   if (ctx) {
     const repos = await getRepositories();
@@ -34,6 +42,18 @@ export default async function Page() {
     const sub = await repos.subscriptions.get(ctx.tenantId);
     plan = effectivePlan(sub);
     entitlements = entitlementsForSubscription(sub);
+
+    // W2 — wallet balance chip (Rand + a usage progress bar; never tokens).
+    const balanceMicro = await getBalance(repos, ctx.tenantId);
+    creditsZar = formatMicroZar(balanceMicro);
+    const period = currentPeriod();
+    const periodRows = await repos.usage.listByPeriod(ctx.tenantId, period);
+    const periodSpend = periodRows.reduce((s, r) => s + r.amountMicro, 0n);
+    const allowance = 30n * MICRO_PER_RAND; // R30 soft allowance (matches /credits)
+    creditsUsagePercent =
+      allowance > 0n
+        ? Math.min(100, Math.round(Number((periodSpend * 100n) / allowance)))
+        : 0;
   }
 
   return (
@@ -44,6 +64,8 @@ export default async function Page() {
       initialSites={initialSites}
       planName={planFor(plan).name}
       entitlements={entitlements}
+      creditsZar={creditsZar}
+      creditsUsagePercent={creditsUsagePercent}
     />
   );
 }

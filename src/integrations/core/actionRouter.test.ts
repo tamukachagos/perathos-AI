@@ -52,7 +52,14 @@ function run(params: Partial<ExecParams>) {
   // binding / async / audit, not the entitlement gate (that lives in
   // actionRouter.entitlements.test.ts).
   return executeAction(
-    { audit: memoryRepositories.audit, subscriptions: memoryRepositories.subscriptions },
+    {
+      audit: memoryRepositories.audit,
+      subscriptions: memoryRepositories.subscriptions,
+      // W2: domain.register carries a credit estimate, so the wallet repo must be
+      // wired; the tenant is funded in beforeEach. This file isn't testing the
+      // credit gate (that lives in actionRouter.credits.test.ts).
+      wallet: memoryRepositories.wallet,
+    },
     {
       tenantId: TENANT,
       actorId: ACTOR,
@@ -74,6 +81,9 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
     // Entitle the test tenant so B9's fail-closed gate passes for paid verbs;
     // this file isn't testing entitlements (see actionRouter.entitlements.test).
     await activatePlan(memoryRepositories, TENANT, "pro");
+    // W2: fund the wallet so the credit gate passes for cost-bearing verbs
+    // (domain.register ≈ R249). This file exercises token binding, not credits.
+    await memoryRepositories.wallet.credit(TENANT, 100_000_000n); // R1000
   });
 
   it("denies a gated verb with NO approval token, and audits the denial", async () => {
@@ -166,7 +176,11 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
     const token = await approve("domain.register", payload, "idem-exp", { ttlMs: 1 });
     // executeAction defaults now=Date.now(); pass a future `now` via params.
     const outcome = await executeAction(
-      { audit: memoryRepositories.audit, subscriptions: memoryRepositories.subscriptions },
+      {
+        audit: memoryRepositories.audit,
+        subscriptions: memoryRepositories.subscriptions,
+        wallet: memoryRepositories.wallet,
+      },
       {
         tenantId: TENANT,
         actorId: ACTOR,
@@ -211,7 +225,11 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
     // immediately. The adapter is actually called (B2); the mock returns ok so
     // the op stays pending until the reconcile sweep on read settles it.
     const outcome = await executeAction(
-      { audit: memoryRepositories.audit, subscriptions: memoryRepositories.subscriptions },
+      {
+        audit: memoryRepositories.audit,
+        subscriptions: memoryRepositories.subscriptions,
+        wallet: memoryRepositories.wallet,
+      },
       {
         tenantId: TENANT,
         actorId: ACTOR,

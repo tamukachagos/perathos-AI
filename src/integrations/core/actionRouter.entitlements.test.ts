@@ -67,12 +67,15 @@ describe("ActionRouter — M6 entitlement gating", () => {
     }
   });
 
-  it("allows the same verb once the tenant is on Growth", async () => {
+  it("allows the same verb once the tenant is on Growth (and funded)", async () => {
     await activatePlan(repos, TENANT, "growth");
+    // domain.register carries a W2 credit estimate (~R249), so the wallet must be
+    // funded AND the wallet repo wired, or the credit gate denies it.
+    await repos.wallet.credit(TENANT, 30_000_000n); // R300
     const payload = { domain: "example.co.za" };
     const token = await approve("domain.register", payload, "idem-paid");
     const outcome = await executeAction(
-      { audit: repos.audit, subscriptions: repos.subscriptions },
+      { audit: repos.audit, subscriptions: repos.subscriptions, wallet: repos.wallet },
       {
         tenantId: TENANT,
         actorId: "dev-user",
@@ -84,7 +87,7 @@ describe("ActionRouter — M6 entitlement gating", () => {
         now: Date.now(), // async verb settles immediately in tests
       },
     );
-    // domain.register is async → 202 accepted once entitled + approved.
+    // domain.register is async → 202 accepted once entitled, funded + approved.
     expect(outcome.status).toBe("accepted");
   });
 

@@ -12,6 +12,9 @@ import type {
   AuditEntry,
   AuditInput,
   BusinessRecord,
+  DebitResult,
+  InvoiceRecord,
+  InvoiceStatus,
   LeadInput,
   LeadRecord,
   Repositories,
@@ -19,6 +22,9 @@ import type {
   SiteVersionRecord,
   SubscriptionInput,
   SubscriptionRecord,
+  UsageRecordInput,
+  UsageRecordRow,
+  WalletRecord,
 } from "../types";
 import type { PlanId } from "@/lib/billing/plans";
 import { prisma, withTenant } from "./client";
@@ -592,6 +598,234 @@ const subscriptions = {
   },
 };
 
+// --- W2 metering wallet (Prisma/Postgres) -----------------------------------
+
+interface WalletRow {
+  id: string;
+  tenantId: string;
+  balanceMicro: bigint;
+  updatedAt: Date;
+}
+
+function toWalletRecord(row: WalletRow): WalletRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    balanceMicro: row.balanceMicro,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+interface UsageRow {
+  id: string;
+  tenantId: string;
+  kind: string;
+  quantity: number;
+  unitCostMicro: bigint;
+  unitPriceMicro: bigint;
+  amountMicro: bigint;
+  period: string;
+  idempotencyKey: string;
+  createdAt: Date;
+}
+
+function toUsageRecord(row: UsageRow): UsageRecordRow {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    kind: row.kind,
+    quantity: row.quantity,
+    unitCostMicro: row.unitCostMicro,
+    unitPriceMicro: row.unitPriceMicro,
+    amountMicro: row.amountMicro,
+    period: row.period,
+    idempotencyKey: row.idempotencyKey,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+interface InvoiceRow {
+  id: string;
+  tenantId: string;
+  period: string;
+  totalMicro: bigint;
+  status: string;
+  providerInvoiceId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toInvoiceRecord(row: InvoiceRow): InvoiceRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    period: row.period,
+    totalMicro: row.totalMicro,
+    status: row.status as InvoiceStatus,
+    providerInvoiceId: row.providerInvoiceId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const wallet = {
+  async get(tenantId: string): Promise<WalletRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.tokenWallet.findUnique({ where: { tenantId } }),
+    );
+    return row ? toWalletRecord(row as WalletRow) : null;
+  },
+  async getBalance(tenantId: string): Promise<bigint> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.tokenWallet.findUnique({ where: { tenantId } }),
+    );
+    return (row as WalletRow | null)?.balanceMicro ?? 0n;
+  },
+  async credit(tenantId: string, amountMicro: bigint): Promise<bigint> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.tokenWallet.upsert({
+        where: { tenantId },
+        create: { tenantId, balanceMicro: amountMicro },
+        update: { balanceMicro: { increment: amountMicro } },
+      }),
+    );
+    return (row as WalletRow).balanceMicro;
+  },
+  async debit(tenantId: string, input: UsageRecordInput): Promise<DebitResult> {
+    // ATOMIC + EXACTLY-ONCE: one transaction that (1) ensures the wallet exists,
+    // then (2) calls record_usage_debit() — the SQL function that INSERTs the
+    // usage row keyed on (tenantId, idempotencyKey) ON CONFLICT DO NOTHING and
+    // only debits when a row was actually inserted. A duplicate key inserts
+    // nothing and does NOT debit (returns applied=false + the prior balance).
+    // Running inside withTenant() keeps RLS scoping the rows the function
+    // touches to the active tenant.
+    const usageId = `usage_${Date.now().toString(36)}_${Math.random()
+      .toString(36)
+      .slice(2, 10)}`;
+    return withTenant(tenantId, async (tx) => {
+      // Ensure a wallet row exists (debit needs something to decrement). A
+      // first-ever debit on a tenant with no top-up starts the wallet at 0 and
+      // goes negative — the pre-flight gate at the router prevents that in
+      // practice, but the ledger must still be coherent if called directly.
+      await tx.tokenWallet.upsert({
+        where: { tenantId },
+        create: { tenantId, balanceMicro: 0n },
+        update: {},
+      });
+      // Bind quantity as BigInt so Prisma sends int8, matching the function's
+      // BIGINT param (a JS number would still bind as int8, but being explicit
+      // keeps the overload unambiguous — see the migration's type note).
+      const rows = await tx.$queryRaw<{ balance_micro: bigint; applied: boolean }[]>`
+        SELECT balance_micro, applied FROM record_usage_debit(
+          ${tenantId}, ${usageId}, ${input.kind}, ${BigInt(input.quantity)},
+          ${input.unitCostMicro}, ${input.unitPriceMicro}, ${input.amountMicro},
+          ${input.period}, ${input.idempotencyKey}
+        )`;
+      const applied = rows[0]?.applied ?? false;
+      const balanceMicro = rows[0]?.balance_micro ?? 0n;
+      // Read back the canonical usage row (the one just inserted, or the prior
+      // one on a duplicate) so callers get a consistent record either way.
+      const usageRow = await tx.usageRecord.findUnique({
+        where: {
+          tenantId_idempotencyKey: {
+            tenantId,
+            idempotencyKey: input.idempotencyKey,
+          },
+        },
+      });
+      return {
+        applied,
+        balanceMicro,
+        record: toUsageRecord(usageRow as UsageRow),
+      };
+    });
+  },
+};
+
+const usage = {
+  async append(
+    tenantId: string,
+    input: UsageRecordInput,
+  ): Promise<UsageRecordRow> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.usageRecord.create({
+        data: {
+          tenantId,
+          kind: input.kind,
+          quantity: input.quantity,
+          unitCostMicro: input.unitCostMicro,
+          unitPriceMicro: input.unitPriceMicro,
+          amountMicro: input.amountMicro,
+          period: input.period,
+          idempotencyKey: input.idempotencyKey,
+        },
+      }),
+    );
+    return toUsageRecord(row as UsageRow);
+  },
+  async listByPeriod(
+    tenantId: string,
+    period: string,
+  ): Promise<UsageRecordRow[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.usageRecord.findMany({
+        where: { tenantId, period },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toUsageRecord(r as UsageRow));
+  },
+  async listRecent(tenantId: string, limit = 20): Promise<UsageRecordRow[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.usageRecord.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      }),
+    );
+    return rows.map((r) => toUsageRecord(r as UsageRow));
+  },
+};
+
+const invoices = {
+  async get(tenantId: string, period: string): Promise<InvoiceRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.invoice.findUnique({
+        where: { tenantId_period: { tenantId, period } },
+      }),
+    );
+    return row ? toInvoiceRecord(row as InvoiceRow) : null;
+  },
+  async upsert(
+    tenantId: string,
+    period: string,
+    totalMicro: bigint,
+    status: InvoiceStatus = "open",
+    providerInvoiceId: string | null = null,
+  ): Promise<InvoiceRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.invoice.upsert({
+        where: { tenantId_period: { tenantId, period } },
+        create: {
+          tenantId,
+          period,
+          totalMicro,
+          status,
+          providerInvoiceId,
+        },
+        update: { totalMicro, status, providerInvoiceId },
+      }),
+    );
+    return toInvoiceRecord(row as InvoiceRow);
+  },
+  async list(tenantId: string): Promise<InvoiceRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.invoice.findMany({ where: { tenantId }, orderBy: { period: "desc" } }),
+    );
+    return rows.map((r) => toInvoiceRecord(r as InvoiceRow));
+  },
+};
+
 export const prismaRepositories: Repositories = {
   businesses,
   sites,
@@ -599,4 +833,7 @@ export const prismaRepositories: Repositories = {
   audit,
   adapterConnections,
   subscriptions,
+  wallet,
+  usage,
+  invoices,
 };

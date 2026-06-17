@@ -111,6 +111,73 @@ export interface SubscriptionRecord {
   updatedAt: string;
 }
 
+// --- W2 metering wallet records ----------------------------------------------
+
+/**
+ * A tenant's prepaid credit wallet (one per tenant). `balanceMicro` is in ZAR
+ * MICRO-CENTS (1 cent = 1_000 micro; R1 = 100_000 micro) so per-token retail
+ * prices stay exact. It is a `bigint` end-to-end (the column is BigInt) — never
+ * widened to `number`, so very large balances never lose precision.
+ */
+export interface WalletRecord {
+  id: string;
+  tenantId: string;
+  balanceMicro: bigint;
+  updatedAt: string;
+}
+
+/** One metered event in the append-only usage ledger. All amounts micro-cents. */
+export interface UsageRecordRow {
+  id: string;
+  tenantId: string;
+  /** e.g. "llm.profile.extract" | "hosting.cpu_hour" | "domain.register". */
+  kind: string;
+  quantity: number;
+  unitCostMicro: bigint;
+  unitPriceMicro: bigint;
+  amountMicro: bigint;
+  /** Billing period, "YYYY-MM". */
+  period: string;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export type InvoiceStatus = "open" | "paid" | "void";
+
+/** A period's usage rolled into a single invoice. One per (tenant, period). */
+export interface InvoiceRecord {
+  id: string;
+  tenantId: string;
+  period: string;
+  totalMicro: bigint;
+  status: InvoiceStatus;
+  providerInvoiceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Input for appending a usage record (the metering service builds this). */
+export interface UsageRecordInput {
+  kind: string;
+  quantity: number;
+  unitCostMicro: bigint;
+  unitPriceMicro: bigint;
+  amountMicro: bigint;
+  period: string;
+  idempotencyKey: string;
+}
+
+/**
+ * The result of an atomic debit. `applied` is false when the idempotencyKey was
+ * already seen (a no-op that returns the prior balance + record — never a
+ * second debit). `record` is the usage row (existing one on a duplicate).
+ */
+export interface DebitResult {
+  applied: boolean;
+  balanceMicro: bigint;
+  record: UsageRecordRow;
+}
+
 // --- Inputs ------------------------------------------------------------------
 
 export interface LeadInput {
@@ -252,6 +319,52 @@ export interface SubscriptionRepository {
   ): Promise<SubscriptionRecord | null>;
 }
 
+// --- W2 metering wallet repositories -----------------------------------------
+
+export interface WalletRepository {
+  /** The tenant's wallet balance in ZAR micro-cents (0 if no wallet yet). */
+  getBalance(tenantId: string): Promise<bigint>;
+  /** Read the wallet row (null if the tenant has never had a wallet). */
+  get(tenantId: string): Promise<WalletRecord | null>;
+  /**
+   * Credit the wallet by `amountMicro` (a top-up / monthly grant). Creates the
+   * wallet on first credit. Returns the new balance.
+   */
+  credit(tenantId: string, amountMicro: bigint): Promise<bigint>;
+  /**
+   * ATOMICALLY append a usage record AND debit the wallet by amountMicro, keyed
+   * EXACTLY-ONCE on (tenantId, input.idempotencyKey). A duplicate key is a
+   * no-op: it returns the prior record + balance with `applied:false` (never a
+   * second debit). Single statement-set in one transaction so the usage row and
+   * the balance change commit or roll back together.
+   */
+  debit(tenantId: string, input: UsageRecordInput): Promise<DebitResult>;
+}
+
+export interface UsageRepository {
+  /** Append a usage record WITHOUT touching the wallet (debit does both). */
+  append(tenantId: string, input: UsageRecordInput): Promise<UsageRecordRow>;
+  /** All usage rows for a tenant in a period (newest first). */
+  listByPeriod(tenantId: string, period: string): Promise<UsageRecordRow[]>;
+  /** A tenant's most recent usage rows across all periods (newest first). */
+  listRecent(tenantId: string, limit?: number): Promise<UsageRecordRow[]>;
+}
+
+export interface InvoiceRepository {
+  /** Read a tenant's invoice for a period, or null. */
+  get(tenantId: string, period: string): Promise<InvoiceRecord | null>;
+  /** Create or update the rolled invoice for a period. One per (tenant, period). */
+  upsert(
+    tenantId: string,
+    period: string,
+    totalMicro: bigint,
+    status?: InvoiceStatus,
+    providerInvoiceId?: string | null,
+  ): Promise<InvoiceRecord>;
+  /** All of a tenant's invoices (newest period first). */
+  list(tenantId: string): Promise<InvoiceRecord[]>;
+}
+
 /** The full data-access surface, assembled by the factory. */
 export interface Repositories {
   businesses: BusinessRepository;
@@ -260,4 +373,7 @@ export interface Repositories {
   audit: AuditRepository;
   adapterConnections: AdapterConnectionRepository;
   subscriptions: SubscriptionRepository;
+  wallet: WalletRepository;
+  usage: UsageRepository;
+  invoices: InvoiceRepository;
 }

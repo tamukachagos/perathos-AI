@@ -117,6 +117,9 @@ model Tenant {
   subscription        Subscription?
   approvalNonces      ApprovalNonce[]
   operations          Operation[]
+  tokenWallet         TokenWallet?
+  usageRecords        UsageRecord[]
+  invoices            Invoice[]
 
   @@map("tenants")
 }
@@ -462,6 +465,90 @@ model WebhookEvent {
   @@unique([provider, eventId])
   @@index([provider])
   @@map("webhook_events")
+}
+
+// ---------------------------------------------------------------------------
+// W2 metering wallet — the prepaid credit wallet + append-only usage ledger +
+// rolled invoices (§5.4 / §8). One unified ledger serves LLM tokens, hosting
+// hours, and domains alike; the wallet balance is the universal hard ceiling
+// enforced as a pre-flight check at the ActionRouter.
+//
+// All three tables are tenant-owned → RLS (ENABLE + FORCE + tenant_isolation),
+// mirroring M1/W1. Only ever touched by the Prisma store impl (DATABASE_URL
+// real); in mock mode the in-memory wallet store is used and these are unread.
+//
+// Money is stored in ZAR MICRO-CENTS (BigInt): 1 cent = 1_000 micro, so
+// R1 = 100_000 micro. Micro-cents keep per-token retail prices (fractions of a
+// cent) exact without floating point.
+// ---------------------------------------------------------------------------
+
+// One wallet per tenant. balanceMicro is the cached running total (prepaid).
+// Credits raise it (top-up), debits lower it (recordUsage), both atomically.
+model TokenWallet {
+  id           String   @id @default(cuid())
+  tenantId     String   @unique
+  balanceMicro BigInt   @default(0)
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("token_wallets")
+}
+
+// Append-only billing source of truth: one row per metered event. Exactly-once
+// accounting is enforced by @@unique([tenantId, idempotencyKey]) — a duplicate
+// record is a no-op that returns the prior row (never double-debits).
+model UsageRecord {
+  id             String   @id @default(cuid())
+  tenantId       String
+  // e.g. "llm.profile.extract" | "hosting.cpu_hour" | "domain.register".
+  kind           String
+  quantity       Int      @default(1)
+  // Wholesale unit cost (what the operator pays upstream), ZAR micro-cents.
+  unitCostMicro  BigInt   @default(0)
+  // Retail unit price = round(unitCostMicro * marginMultiplier), micro-cents.
+  unitPriceMicro BigInt   @default(0)
+  // Total debited = unitPriceMicro * quantity, micro-cents.
+  amountMicro    BigInt   @default(0)
+  // Billing period this event rolls into, e.g. "2026-06" (YYYY-MM).
+  period         String
+  idempotencyKey String
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+  @@index([tenantId, period])
+  @@map("usage_records")
+}
+
+enum InvoiceStatus {
+  open
+  paid
+  void
+}
+
+// A period's usage rolled into a single invoice, charged via the dormant
+// Paystack BillingProvider (mock now). One per (tenant, period).
+model Invoice {
+  id                String        @id @default(cuid())
+  tenantId          String
+  period            String
+  totalMicro        BigInt        @default(0)
+  status            InvoiceStatus @default(open)
+  providerInvoiceId String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, period])
+  @@index([tenantId])
+  @@index([tenantId, period])
+  @@map("invoices")
 }
 
 // ---------------------------------------------------------------------------
