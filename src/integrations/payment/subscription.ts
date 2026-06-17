@@ -121,19 +121,175 @@ export function mockBillingProvider(): BillingProvider {
   };
 }
 
+// --- Real Paystack billing provider -----------------------------------------
+// Uses the Paystack REST API (https://api.paystack.co) via fetch (no SDK). It
+// stays DORMANT until PAYSTACK_SECRET_KEY is set — selectBillingProvider() only
+// constructs it then. We pass metadata.tenantId + metadata.plan so the webhook
+// can resolve the owning tenant, and map our PlanId -> Paystack plan codes from
+// env (PAYSTACK_PLAN_GROWTH / PAYSTACK_PLAN_PRO). The secret key is read only
+// server-side and never logged.
+
+const PAYSTACK_BASE_URL = "https://api.paystack.co";
+
+/** Our PlanId -> Paystack plan code, from env. Free has no Paystack plan. */
+function paystackPlanCode(plan: PlanId): string | undefined {
+  switch (plan) {
+    case "growth":
+      return process.env.PAYSTACK_PLAN_GROWTH?.trim() || undefined;
+    case "pro":
+      return process.env.PAYSTACK_PLAN_PRO?.trim() || undefined;
+    default:
+      return undefined; // free
+  }
+}
+
+/** Map a Paystack subscription `status` string to our ProviderSubscription status. */
+function mapPaystackStatus(
+  status: string | undefined,
+): ProviderSubscription["status"] {
+  switch ((status ?? "").toLowerCase()) {
+    case "active":
+      return "active";
+    case "non-renewing":
+    case "cancelled":
+    case "canceled":
+    case "complete":
+      return "canceled";
+    case "attention":
+      return "past_due";
+    default:
+      return "incomplete";
+  }
+}
+
+async function paystackFetch(
+  secretKey: string,
+  path: string,
+  init: { method: string; body?: unknown },
+): Promise<unknown> {
+  const res = await fetch(`${PAYSTACK_BASE_URL}${path}`, {
+    method: init.method,
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/json",
+    },
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
+  const json = (await res.json().catch(() => ({}))) as {
+    status?: boolean;
+    message?: string;
+    data?: unknown;
+  };
+  if (!res.ok || json.status === false) {
+    // Surface a generic error (never echo the secret); message is from Paystack.
+    throw new Error(
+      `paystack_error:${res.status}:${json.message ?? "unknown"}`,
+    );
+  }
+  return json.data;
+}
+
+export function paystackBillingProvider(): BillingProvider {
+  const secretKey = process.env.PAYSTACK_SECRET_KEY!.trim();
+  return {
+    name: "paystack",
+    charges: true,
+    async createCheckout(input: CreateCheckoutInput): Promise<CheckoutSession> {
+      const plan = planFor(input.plan);
+      // Initialize a transaction -> hosted checkout URL. Amount is in the
+      // currency's subunit (ZAR cents), which matches Plan.priceCents. The
+      // plan code (when set) turns this into a recurring subscription on charge.
+      const planCode = paystackPlanCode(input.plan);
+      const data = (await paystackFetch(secretKey, "/transaction/initialize", {
+        method: "POST",
+        body: {
+          email: input.customerEmail ?? undefined,
+          amount: plan.priceCents,
+          currency: plan.currency,
+          callback_url: input.callbackUrl,
+          ...(planCode ? { plan: planCode } : {}),
+          metadata: { tenantId: input.tenantId, plan: input.plan },
+        },
+      })) as { authorization_url?: string; reference?: string };
+      if (!data.authorization_url || !data.reference) {
+        throw new Error("paystack_init_missing_fields");
+      }
+      return {
+        checkoutUrl: data.authorization_url,
+        reference: data.reference,
+      };
+    },
+    async cancel(input: CancelInput): Promise<ProviderSubscription> {
+      // Fetch the subscription to get the email token Paystack requires to
+      // disable it, then disable (cancel at period end — Paystack stops renewal).
+      const sub = (await paystackFetch(
+        secretKey,
+        `/subscription/${encodeURIComponent(input.providerSubscriptionId)}`,
+        { method: "GET" },
+      )) as {
+        subscription_code?: string;
+        email_token?: string;
+        status?: string;
+        next_payment_date?: string;
+        plan?: { plan_code?: string };
+      };
+      if (sub.subscription_code && sub.email_token) {
+        await paystackFetch(secretKey, "/subscription/disable", {
+          method: "POST",
+          body: { code: sub.subscription_code, token: sub.email_token },
+        });
+      }
+      return {
+        plan: input.providerSubscriptionId ? planFromCode(sub.plan?.plan_code) : "free",
+        status: "canceled",
+        providerSubscriptionId: input.providerSubscriptionId,
+        currentPeriodEnd: sub.next_payment_date ?? null,
+        cancelAtPeriodEnd: true,
+      };
+    },
+    async fetchStatus(
+      providerSubscriptionId: string,
+    ): Promise<ProviderSubscription | null> {
+      try {
+        const sub = (await paystackFetch(
+          secretKey,
+          `/subscription/${encodeURIComponent(providerSubscriptionId)}`,
+          { method: "GET" },
+        )) as {
+          status?: string;
+          next_payment_date?: string;
+          plan?: { plan_code?: string };
+        };
+        return {
+          plan: planFromCode(sub.plan?.plan_code),
+          status: mapPaystackStatus(sub.status),
+          providerSubscriptionId,
+          currentPeriodEnd: sub.next_payment_date ?? null,
+          cancelAtPeriodEnd: mapPaystackStatus(sub.status) === "canceled",
+        };
+      } catch {
+        return null;
+      }
+    },
+  };
+}
+
+/** Reverse-map a Paystack plan code back to our PlanId (best effort, env-driven). */
+function planFromCode(code: string | undefined): PlanId {
+  if (!code) return "free";
+  if (code === process.env.PAYSTACK_PLAN_GROWTH?.trim()) return "growth";
+  if (code === process.env.PAYSTACK_PLAN_PRO?.trim()) return "pro";
+  return "free";
+}
+
 /**
  * Select the active billing provider. MOCK by default; returns the real Paystack
- * provider only once PAYSTACK_SECRET_KEY is present (M-future). Today only the
- * mock exists, so card charging is dormant with no keys — the M6 contract.
+ * provider only once PAYSTACK_SECRET_KEY is present. With no key, card charging
+ * is dormant and the whole billing UX runs on the mock — the M6 contract.
  */
 export function selectBillingProvider(): BillingProvider {
   const hasPaystack = Boolean(process.env.PAYSTACK_SECRET_KEY?.trim());
-  // When the real Paystack adapter lands it is constructed here; until then the
-  // mock is always used so the whole billing UX runs with no secrets.
-  if (hasPaystack) {
-    // return paystackBillingProvider();  // (M-future, real charge)
-  }
-  return mockBillingProvider();
+  return hasPaystack ? paystackBillingProvider() : mockBillingProvider();
 }
 
 /** Exposed for tests: reset the per-process mock billing store. */

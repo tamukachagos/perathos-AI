@@ -6,7 +6,7 @@ import type {
   ActionResult,
   ProviderAdapter,
 } from "@/integrations/core/types";
-import { generateBusinessProfile } from "./generateProfile";
+import { selectAgentProvider } from "./provider";
 
 // Agent (Claude later): turns a plain-language intake into structured business
 // data. Its readiness mirrors the profile completeness in M0. Unlike the other
@@ -23,11 +23,12 @@ export const agentAdapter: ProviderAdapter = {
   evaluate: evaluateProfile,
   async action(request: ActionRequest): Promise<ActionResult> {
     if (request.verb === "agent.generateProfile") {
-      // The wizard reads the structured profile from generateBusinessProfile()
-      // (via /api/agent/profile) directly; this verb is the adapter-plane mirror
-      // so the AgentProvider has a real action in M3.
+      // The wizard reads the structured profile via /api/agent/profile directly;
+      // this verb is the adapter-plane mirror so the AgentProvider has a real
+      // action. Both route through selectAgentProvider() — mock by default, real
+      // Claude once ANTHROPIC_API_KEY is set.
       const description = String(request.payload?.description ?? "");
-      const { profile } = await generateBusinessProfile(description);
+      const { profile } = await selectAgentProvider().generateProfile(description);
       return {
         ok: true,
         detail: `Generated a draft profile for "${profile.name}".`,
