@@ -1,0 +1,371 @@
+// Launch Desk — M1 persistence schema.
+//
+// Provider is postgresql. The app MUST still build and run with NO DATABASE_URL
+// (mock mode): nothing here is loaded at build/static-generation time, and the
+// generated client is only instantiated by the Prisma repository impl, which the
+// env-gated factory selects only when DATABASE_URL is set.
+//
+// Tenant isolation is enforced in two layers:
+//   1. App layer  — every query is scoped by `tenantId` via src/lib/authz.ts.
+//   2. DB layer    — Postgres Row-Level Security policies (see the initial
+//      migration's RLS SQL) are a backstop that closes cross-tenant IDOR even
+//      if an app-layer scope is missed.
+//
+// Every tenant-owned table carries a `tenantId` column + index so both layers
+// can scope efficiently.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity — Auth.js (NextAuth) v5 with the Prisma adapter + DB sessions.
+// These four models match the Auth.js Prisma adapter schema exactly.
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  accounts    Account[]
+  sessions    Session[]
+  memberships Membership[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy — a Tenant is the organization that owns all business data. A User
+// joins one or more Tenants through a Membership (role-bearing). The active
+// tenant is resolved from the session in authz.ts.
+// ---------------------------------------------------------------------------
+
+enum MembershipRole {
+  owner
+  admin
+  member
+}
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships         Membership[]
+  businesses          Business[]
+  generatedSites      GeneratedSite[]
+  siteVersions        SiteVersion[]
+  domains             Domain[]
+  paymentLinks        PaymentLink[]
+  leads               Lead[]
+  adapterConnections  AdapterConnection[]
+  auditLog            AuditLog[]
+
+  @@map("tenants")
+}
+
+model Membership {
+  id        String         @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      MembershipRole @default(owner)
+  createdAt DateTime       @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+  @@index([tenantId])
+  @@map("memberships")
+}
+
+// ---------------------------------------------------------------------------
+// Business — the plain-language profile the dashboard edits. Mirrors the
+// `Business` shape in src/lib/types.ts (one tenant can own several businesses).
+// ---------------------------------------------------------------------------
+
+model Business {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  industry  String   @default("")
+  location  String   @default("")
+  whatsapp  String   @default("")
+  domainName String  @default("")
+  email     String   @default("")
+  tone      String   @default("")
+  offer     String   @default("")
+  services  String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  generatedSites GeneratedSite[]
+  domains        Domain[]
+  paymentLinks   PaymentLink[]
+  leads          Lead[]
+
+  @@index([tenantId])
+  @@map("businesses")
+}
+
+// ---------------------------------------------------------------------------
+// GeneratedSite + SiteVersion — a published site for a business, with an
+// append-style version history (rollback target for M2). The current published
+// content is the SiteVersion referenced by `currentVersionId`.
+// ---------------------------------------------------------------------------
+
+enum SiteStatus {
+  draft
+  published
+  archived
+}
+
+model GeneratedSite {
+  id               String     @id @default(cuid())
+  tenantId         String
+  businessId       String
+  slug             String     @unique
+  status           SiteStatus @default(draft)
+  currentVersionId String?    @unique
+  publishedAt      DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  tenant         Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  versions       SiteVersion[] @relation("SiteVersions")
+  currentVersion SiteVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@map("generated_sites")
+}
+
+model SiteVersion {
+  id        String   @id @default(cuid())
+  tenantId  String
+  siteId    String
+  version   Int
+  // The full PublishedSite payload (servicesList, launchRecord, profile fields)
+  // captured at publish time, kept verbatim for crawlable SSR + rollback.
+  snapshot  Json
+  createdAt DateTime @default(now())
+
+  tenant      Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  site        GeneratedSite  @relation("SiteVersions", fields: [siteId], references: [id], onDelete: Cascade)
+  currentFor  GeneratedSite? @relation("CurrentVersion")
+
+  @@unique([siteId, version])
+  @@index([tenantId])
+  @@index([siteId])
+  @@map("site_versions")
+}
+
+// ---------------------------------------------------------------------------
+// Domain — a custom .co.za domain mapped to a site (host→slug in Edge middleware,
+// M2/M4). Registration is async; `status` tracks the lifecycle.
+// ---------------------------------------------------------------------------
+
+enum DomainStatus {
+  requested
+  pending_registration
+  active
+  failed
+  released
+}
+
+model Domain {
+  id         String       @id @default(cuid())
+  tenantId   String
+  businessId String?
+  hostname   String       @unique
+  status     DomainStatus @default(requested)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@map("domains")
+}
+
+// ---------------------------------------------------------------------------
+// PaymentLink — a hosted payment link configured per business (Paystack/Yoco/
+// PayFast in M4). Launch Desk never stores card data.
+// ---------------------------------------------------------------------------
+
+enum PaymentLinkStatus {
+  draft
+  active
+  disabled
+}
+
+model PaymentLink {
+  id          String            @id @default(cuid())
+  tenantId    String
+  businessId  String
+  label       String
+  amountCents Int?
+  currency    String            @default("ZAR")
+  provider    String            @default("paystack")
+  url         String?
+  status      PaymentLinkStatus @default(draft)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@map("payment_links")
+}
+
+// ---------------------------------------------------------------------------
+// Lead — a POPIA-compliant enquiry captured by a published site's lead form.
+// Consent is captured + timestamped, the processing purpose is recorded, the
+// marketing opt-in is separate, and a retention/expiry timestamp drives the
+// POPIA purge Cron (M5).
+// ---------------------------------------------------------------------------
+
+model Lead {
+  id            String    @id @default(cuid())
+  tenantId      String
+  businessId    String
+  name          String
+  contact       String
+  message       String    @default("")
+  purpose       String    @default("Respond to this enquiry")
+  consent       Boolean   @default(false)
+  consentAt     DateTime?
+  marketingOptIn Boolean  @default(false)
+  // POPIA retention: when this lead may be purged. Defaults applied at write time.
+  retentionUntil DateTime?
+  createdAt     DateTime  @default(now())
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@index([retentionUntil])
+  @@map("leads")
+}
+
+// ---------------------------------------------------------------------------
+// AdapterConnection — per-tenant state/mode for each of the nine provider
+// adapters. Mode mirrors AdapterMode (mock | sandbox | live). Secrets are NOT
+// stored here (they live in env, read only in the server execute plane).
+// ---------------------------------------------------------------------------
+
+enum AdapterConnMode {
+  mock
+  sandbox
+  live
+}
+
+enum AdapterConnStatus {
+  ready
+  review
+  pending
+}
+
+model AdapterConnection {
+  id            String            @id @default(cuid())
+  tenantId      String
+  interfaceName String
+  mode          AdapterConnMode   @default(mock)
+  status        AdapterConnStatus @default(pending)
+  // Non-secret adapter state (e.g. external resource ids, last sync ref).
+  state         Json?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, interfaceName])
+  @@index([tenantId])
+  @@map("adapter_connections")
+}
+
+// ---------------------------------------------------------------------------
+// AuditLog — append-only record of every risky action / state change. No
+// updates or deletes (enforced by RLS in the migration). Drives the audit UI
+// and the ActionRouter audit sink (M3).
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  actorId    String?
+  action     String
+  targetType String?
+  targetId   String?
+  // Structured, PII-free detail about the event.
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([createdAt])
+  @@map("audit_log")
+}

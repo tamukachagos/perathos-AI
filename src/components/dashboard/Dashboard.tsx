@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Copy, Play, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { Copy, LogIn, Play, Sparkles } from "lucide-react";
 import type { Business, PublishedSites } from "@/lib/types";
 import { evaluateAdapters, readinessScore } from "@/integrations/core/registry";
 import { buildPublishedSite } from "@/lib/siteEngine";
@@ -15,35 +16,76 @@ import {
   writeStoredDraft,
 } from "@/lib/clientStore";
 import { initialBusiness } from "@/lib/platformData";
+import { publishSiteAction, saveBusinessAction } from "@/app/actions";
 import { Sidebar } from "./Sidebar";
 import { BusinessProfile } from "./BusinessProfile";
 import { SitePreview } from "./SitePreview";
 import { LaunchChecklist } from "./LaunchChecklist";
 import { AgentOps, AnalyticsPanel, ArchitecturePanel } from "./LowerPanels";
 
-export function Dashboard() {
+interface DashboardProps {
+  authenticated?: boolean;
+  email?: string | null;
+  // When authenticated, the server passes the persisted profile + sites. When
+  // anonymous, these are null and the dashboard uses the localStorage draft UX.
+  initialBusiness?: Business | null;
+  initialSites?: PublishedSites | null;
+}
+
+export function Dashboard({
+  authenticated = false,
+  email = null,
+  initialBusiness: serverBusiness = null,
+  initialSites: serverSites = null,
+}: DashboardProps) {
   const router = useRouter();
 
-  // Start from a stable server-safe default, then hydrate from localStorage on
-  // mount. This avoids a server/client hydration mismatch.
-  const [business, setBusiness] = useState<Business>(initialBusiness);
-  const [publishedSites, setPublishedSites] = useState<PublishedSites>({});
+  // Start from a stable server-safe default, then hydrate. When authenticated we
+  // hydrate from the server-provided records; otherwise from localStorage.
+  const [business, setBusiness] = useState<Business>(
+    serverBusiness ?? initialBusiness,
+  );
+  const [publishedSites, setPublishedSites] = useState<PublishedSites>(
+    serverSites ?? {},
+  );
   const [hydrated, setHydrated] = useState(false);
   const [activeStep, setActiveStep] = useState("profile");
   const [agentRuns, setAgentRuns] = useState(3);
   const [notice, setNotice] = useState("");
+  const migratedRef = useRef(false);
 
   useEffect(() => {
+    if (authenticated) {
+      // Server is the source of truth for an authenticated session.
+      if (serverBusiness) setBusiness(serverBusiness);
+      if (serverSites) setPublishedSites(serverSites);
+      setHydrated(true);
+
+      // On first authenticated mount, migrate any local draft into the account
+      // (the API only adopts it if the tenant has no business yet).
+      if (!migratedRef.current && !serverBusiness) {
+        migratedRef.current = true;
+        const draft = readStoredDraft();
+        fetch("/api/draft/migrate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ draft }),
+        })
+          .then(() => router.refresh())
+          .catch(() => undefined);
+      }
+      return;
+    }
+
+    // Anonymous: the M0 localStorage UX.
     setBusiness(readStoredDraft());
     setPublishedSites(readPublishedSites());
     setHydrated(true);
-  }, []);
+  }, [authenticated, serverBusiness, serverSites, router]);
 
   const adapters = useMemo(() => evaluateAdapters(business), [business]);
   const publishProgress = useMemo(() => readinessScore(business), [business]);
 
-  // "Published" is derived from saved sites, so it survives refresh instead of
-  // being a transient flag that resets to a lower readiness on reload.
   const ownSlug = slugify(business.name);
   const published = Boolean(publishedSites[ownSlug]);
 
@@ -56,15 +98,20 @@ export function Dashboard() {
     );
   }, [publishedSites]);
 
+  // Persist drafts: localStorage for anonymous; server action for authenticated.
   useEffect(() => {
-    if (hydrated) writeStoredDraft(business);
-  }, [business, hydrated]);
+    if (!hydrated) return;
+    if (authenticated) {
+      void saveBusinessAction(business).catch(() => undefined);
+    } else {
+      writeStoredDraft(business);
+    }
+  }, [business, hydrated, authenticated]);
 
   useEffect(() => {
-    if (hydrated) writePublishedSites(publishedSites);
-  }, [publishedSites, hydrated]);
+    if (hydrated && !authenticated) writePublishedSites(publishedSites);
+  }, [publishedSites, hydrated, authenticated]);
 
-  // Clear transient confirmations so they re-announce each time.
   useEffect(() => {
     if (!notice) return undefined;
     const timer = setTimeout(() => setNotice(""), 4000);
@@ -86,7 +133,19 @@ export function Dashboard() {
     setNotice("AI update drafted — review it in the preview before publishing.");
   }
 
-  function publishDraft() {
+  async function publishDraft() {
+    if (authenticated) {
+      try {
+        const { slug } = await publishSiteAction(business);
+        setNotice(`Published to /s/${slug}`);
+        router.push(`/s/${slug}`);
+        return;
+      } catch {
+        setNotice("Publish failed — please try again.");
+        return;
+      }
+    }
+
     const site = buildPublishedSite(business, publishedSites);
     setPublishedSites((current) => ({ ...current, [site.slug]: site }));
     setNotice(`Published to /s/${site.slug}`);
@@ -117,6 +176,16 @@ export function Dashboard() {
             </p>
           </div>
           <div className="topbar-actions">
+            {authenticated ? (
+              <span className="ghost-button" aria-label="Signed in">
+                {email ?? "Signed in"}
+              </span>
+            ) : (
+              <Link className="ghost-button" href="/sign-in">
+                <LogIn size={16} />
+                Sign in
+              </Link>
+            )}
             <button className="ghost-button" type="button" onClick={runAgentUpdate}>
               <Sparkles size={16} />
               AI update

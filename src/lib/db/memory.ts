@@ -1,0 +1,225 @@
+// In-memory / mock repository implementation.
+//
+// Active whenever there is no DATABASE_URL. Seeded with the Maboneng sample so
+// the app is fully usable with no database. State lives in module-level maps; it
+// resets on server restart, which is the intended behaviour for a mock.
+
+import type { Business, PublishedSite } from "@/lib/types";
+import type {
+  AdapterConnectionInput,
+  AdapterConnectionRecord,
+  AuditEntry,
+  AuditInput,
+  BusinessRecord,
+  LeadInput,
+  LeadRecord,
+  Repositories,
+  SiteRecord,
+} from "./types";
+import { seedBusiness, seedSite } from "./seed";
+
+// --- Module-level store (one per server process) ----------------------------
+
+interface Store {
+  businesses: Map<string, BusinessRecord>;
+  sites: Map<string, SiteRecord>; // keyed by slug
+  leads: LeadRecord[];
+  audit: AuditEntry[];
+  adapterConnections: Map<string, AdapterConnectionRecord>; // key `${tenantId}:${interfaceName}`
+  seq: number;
+}
+
+// Reuse a single store across hot-reloads in dev so a just-published site is
+// still visible to the public route within the same server process.
+const globalStore = globalThis as unknown as { __launchDeskStore?: Store };
+
+function createStore(): Store {
+  const business = seedBusiness();
+  const site = seedSite();
+  return {
+    businesses: new Map([[business.id, business]]),
+    sites: new Map([[site.slug, site]]),
+    leads: [],
+    audit: [],
+    adapterConnections: new Map(),
+    seq: 1,
+  };
+}
+
+function store(): Store {
+  if (!globalStore.__launchDeskStore) {
+    globalStore.__launchDeskStore = createStore();
+  }
+  return globalStore.__launchDeskStore;
+}
+
+function nextId(prefix: string): string {
+  const s = store();
+  s.seq += 1;
+  return `${prefix}_${s.seq.toString(36)}_${Date.now().toString(36)}`;
+}
+
+// --- Repositories ------------------------------------------------------------
+
+const businesses = {
+  async list(tenantId: string): Promise<BusinessRecord[]> {
+    return [...store().businesses.values()].filter(
+      (b) => b.tenantId === tenantId,
+    );
+  },
+  async get(tenantId: string, id: string): Promise<BusinessRecord | null> {
+    const found = store().businesses.get(id);
+    return found && found.tenantId === tenantId ? found : null;
+  },
+  async getPrimary(tenantId: string): Promise<BusinessRecord | null> {
+    return (
+      [...store().businesses.values()].find((b) => b.tenantId === tenantId) ??
+      null
+    );
+  },
+  async create(tenantId: string, business: Business): Promise<BusinessRecord> {
+    const record: BusinessRecord = {
+      id: nextId("biz"),
+      tenantId,
+      ...business,
+    };
+    store().businesses.set(record.id, record);
+    return record;
+  },
+  async upsertPrimary(
+    tenantId: string,
+    business: Business,
+  ): Promise<BusinessRecord> {
+    const existing = await this.getPrimary(tenantId);
+    if (existing) return this.update(tenantId, existing.id, business);
+    return this.create(tenantId, business);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    business: Business,
+  ): Promise<BusinessRecord> {
+    const existing = await this.get(tenantId, id);
+    if (!existing) throw new Error(`Business ${id} not found for tenant`);
+    const updated: BusinessRecord = { ...existing, ...business };
+    store().businesses.set(id, updated);
+    return updated;
+  },
+};
+
+const sites = {
+  async listByTenant(tenantId: string): Promise<SiteRecord[]> {
+    return [...store().sites.values()].filter((s) => s.tenantId === tenantId);
+  },
+  async getBySlug(slug: string): Promise<SiteRecord | null> {
+    return store().sites.get(slug) ?? null;
+  },
+  async publish(
+    tenantId: string,
+    businessId: string,
+    site: PublishedSite,
+  ): Promise<SiteRecord> {
+    const s = store();
+    const existing = s.sites.get(site.slug);
+    const record: SiteRecord = {
+      id: existing?.id ?? nextId("site"),
+      tenantId,
+      businessId,
+      slug: site.slug,
+      version: existing ? existing.version + 1 : 1,
+      site,
+    };
+    s.sites.set(site.slug, record);
+    return record;
+  },
+};
+
+const leads = {
+  async create(tenantId: string, input: LeadInput): Promise<LeadRecord> {
+    const record: LeadRecord = {
+      id: nextId("lead"),
+      tenantId,
+      businessId: input.businessId,
+      name: input.name,
+      contact: input.contact,
+      message: input.message ?? "",
+      purpose: input.purpose ?? "Respond to this enquiry",
+      consent: input.consent,
+      consentAt: input.consentAt ?? (input.consent ? new Date().toISOString() : null),
+      marketingOptIn: input.marketingOptIn ?? false,
+      retentionUntil: input.retentionUntil ?? null,
+      createdAt: new Date().toISOString(),
+    };
+    store().leads.push(record);
+    return record;
+  },
+  async listByBusiness(
+    tenantId: string,
+    businessId: string,
+  ): Promise<LeadRecord[]> {
+    return store().leads.filter(
+      (l) => l.tenantId === tenantId && l.businessId === businessId,
+    );
+  },
+};
+
+const audit = {
+  async append(tenantId: string, input: AuditInput): Promise<AuditEntry> {
+    const entry: AuditEntry = {
+      id: nextId("audit"),
+      tenantId,
+      actorId: input.actorId ?? null,
+      action: input.action,
+      targetType: input.targetType ?? null,
+      targetId: input.targetId ?? null,
+      metadata: input.metadata ?? null,
+      createdAt: new Date().toISOString(),
+    };
+    store().audit.push(entry);
+    return entry;
+  },
+  async list(tenantId: string): Promise<AuditEntry[]> {
+    return store()
+      .audit.filter((a) => a.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+};
+
+const adapterConnections = {
+  async list(tenantId: string): Promise<AdapterConnectionRecord[]> {
+    return [...store().adapterConnections.values()].filter(
+      (c) => c.tenantId === tenantId,
+    );
+  },
+  async upsert(
+    tenantId: string,
+    input: AdapterConnectionInput,
+  ): Promise<AdapterConnectionRecord> {
+    const key = `${tenantId}:${input.interfaceName}`;
+    const s = store();
+    const existing = s.adapterConnections.get(key);
+    const record: AdapterConnectionRecord = {
+      id: existing?.id ?? nextId("conn"),
+      tenantId,
+      interfaceName: input.interfaceName,
+      mode: input.mode ?? existing?.mode ?? "mock",
+      status: input.status ?? existing?.status ?? "pending",
+      state: input.state ?? existing?.state ?? null,
+    };
+    s.adapterConnections.set(key, record);
+    return record;
+  },
+};
+
+export const memoryRepositories: Repositories = {
+  businesses,
+  sites,
+  leads,
+  audit,
+  adapterConnections,
+};
+
+// Exposed for tests so they can run against a fresh store.
+export function __resetMemoryStore(): void {
+  globalStore.__launchDeskStore = createStore();
+}
