@@ -14,7 +14,10 @@
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:migrate": "prisma migrate deploy",
-    "db:seed": "node prisma/seed.mjs"
+    "db:seed": "node prisma/seed.mjs",
+    "e2e": "playwright test",
+    "e2e:install": "playwright install --with-deps chromium",
+    "lighthouse": "lhci autorun"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",
@@ -27,7 +30,12 @@
     "react-dom": "^19.0.0",
     "sanitize-html": "^2.17.5"
   },
+  "optionalDependencies": {
+    "@sentry/nextjs": "^8.47.0"
+  },
   "devDependencies": {
+    "@lhci/cli": "^0.14.0",
+    "@playwright/test": "^1.49.1",
     "@types/node": "^22.10.7",
     "@types/nodemailer": "^6.4.24",
     "@types/react": "^19.0.7",

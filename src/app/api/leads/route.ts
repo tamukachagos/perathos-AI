@@ -12,12 +12,10 @@
 import { NextResponse } from "next/server";
 import { getRepositories } from "@/lib/db";
 import { sanitizeText } from "@/lib/sanitize";
+import { PROCESSING_PURPOSE, retentionUntil } from "@/lib/popia";
+import { logger } from "@/lib/logger";
 
 export const dynamic = "force-dynamic";
-
-// POPIA: leads are retained for a bounded period unless re-consented. 12 months
-// is a defensible default for an enquiry; the purge Cron (M5) deletes past this.
-const RETENTION_MONTHS = 12;
 
 // --- Basic in-memory rate limiting (per-process, best-effort) ----------------
 // A real deployment uses a shared store (e.g. Upstash) behind the same shape;
@@ -112,19 +110,16 @@ export async function POST(request: Request) {
   }
 
   const now = new Date();
-  const retentionUntil = new Date(now);
-  retentionUntil.setMonth(retentionUntil.getMonth() + RETENTION_MONTHS);
-
   const lead = await repos.leads.create(site.tenantId, {
     businessId: site.businessId,
     name,
     contact,
     message,
-    purpose: "Respond to this enquiry",
+    purpose: PROCESSING_PURPOSE,
     consent: true,
     consentAt: now.toISOString(),
     marketingOptIn: body.marketingOptIn === true,
-    retentionUntil: retentionUntil.toISOString(),
+    retentionUntil: retentionUntil(now).toISOString(),
   });
 
   // PII-free audit entry under the owning tenant.
@@ -134,6 +129,13 @@ export async function POST(request: Request) {
     targetType: "lead",
     targetId: lead.id,
     metadata: { slug, marketingOptIn: lead.marketingOptIn },
+  });
+
+  // PII-free structured log (the logger scrubs values defensively too).
+  logger.info("lead.captured", {
+    slug,
+    leadId: lead.id,
+    marketingOptIn: lead.marketingOptIn,
   });
 
   return NextResponse.json({ ok: true, id: lead.id }, { status: 201 });

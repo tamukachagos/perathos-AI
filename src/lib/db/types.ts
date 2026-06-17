@@ -158,6 +158,23 @@ export interface SiteRepository {
 export interface LeadRepository {
   create(tenantId: string, input: LeadInput): Promise<LeadRecord>;
   listByBusiness(tenantId: string, businessId: string): Promise<LeadRecord[]>;
+  /**
+   * POPIA retention purge: delete every lead whose `retentionUntil` is on or
+   * before `asOf`, ACROSS ALL TENANTS (the Cron runs platform-wide, not within
+   * a session). Returns the number deleted.
+   */
+  purgeExpired(asOf: Date): Promise<number>;
+  /**
+   * DSAR support: find every lead whose `contact` matches (case-insensitive,
+   * trimmed), across all tenants — a data subject's identifier is global, not
+   * tenant-scoped. Used to EXPORT a subject's records.
+   */
+  findByContact(contact: string): Promise<LeadRecord[]>;
+  /**
+   * DSAR erasure: delete every lead whose `contact` matches, across all
+   * tenants. Returns the number deleted.
+   */
+  deleteByContact(contact: string): Promise<number>;
 }
 
 export interface AuditRepository {

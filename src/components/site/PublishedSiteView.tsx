@@ -5,6 +5,7 @@ import { initialsOf, whatsappLink } from "@/lib/format";
 import { buildBusinessSchema } from "@/lib/siteEngine";
 import { sanitizeUrl } from "@/lib/sanitize";
 import { LeadForm } from "./LeadForm";
+import { ConsentBanner } from "./ConsentBanner";
 
 // Server-rendered public customer site. Ships minimal JS (only the LeadForm
 // island is client-side) and emits LocalBusiness JSON-LD server-side for SEO.
@@ -154,6 +155,18 @@ export function PublishedSiteView({ site }: { site: PublishedSite }) {
         </div>
         <LeadForm business={site.name} slug={site.slug} />
       </section>
+
+      <footer className="published-footer">
+        <span>
+          {site.name} · {site.location}
+        </span>
+        <Link className="anchor-link" href="/privacy">
+          Privacy &amp; POPIA
+        </Link>
+      </footer>
+
+      {/* POPIA: gates non-essential scripts until the visitor accepts. */}
+      <ConsentBanner />
     </main>
   );
 }

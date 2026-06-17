@@ -220,6 +220,29 @@ const leads = {
       (l) => l.tenantId === tenantId && l.businessId === businessId,
     );
   },
+  async purgeExpired(asOf: Date): Promise<number> {
+    const s = store();
+    const cutoff = asOf.getTime();
+    const before = s.leads.length;
+    s.leads = s.leads.filter((l) => {
+      if (!l.retentionUntil) return true; // no expiry set => keep
+      return new Date(l.retentionUntil).getTime() > cutoff;
+    });
+    return before - s.leads.length;
+  },
+  async findByContact(contact: string): Promise<LeadRecord[]> {
+    const key = contact.trim().toLowerCase();
+    if (!key) return [];
+    return store().leads.filter((l) => l.contact.trim().toLowerCase() === key);
+  },
+  async deleteByContact(contact: string): Promise<number> {
+    const s = store();
+    const key = contact.trim().toLowerCase();
+    if (!key) return 0;
+    const before = s.leads.length;
+    s.leads = s.leads.filter((l) => l.contact.trim().toLowerCase() !== key);
+    return before - s.leads.length;
+  },
 };
 
 const audit = {

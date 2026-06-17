@@ -34,6 +34,11 @@ vite-dev.*.log
 # Local agent/dev tooling
 .claude/
 
+# Playwright / Lighthouse artifacts
+test-results/
+playwright-report/
+.lighthouseci/
+
 # Legacy Vite prototype files (replaced by Next.js in M0; OneDrive keeps resurrecting them)
 /src/App.jsx
 /src/App.css

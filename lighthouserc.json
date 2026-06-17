@@ -1,0 +1,33 @@
+{
+  "ci": {
+    "collect": {
+      "startServerCommand": "npm run start",
+      "startServerReadyPattern": "Ready|started server|Local:",
+      "url": ["http://localhost:3000/s/maboneng-mobile-spa"],
+      "numberOfRuns": 1,
+      "settings": {
+        "preset": "desktop",
+        "onlyCategories": ["performance"]
+      }
+    },
+    "assert": {
+      "assertions": {
+        "categories:performance": ["warn", { "minScore": 0.9 }],
+        "resource-summary:script:size": [
+          "error",
+          { "maxNumericValue": 160000 }
+        ],
+        "resource-summary:total:size": [
+          "error",
+          { "maxNumericValue": 400000 }
+        ],
+        "resource-summary:script:count": ["warn", { "maxNumericValue": 8 }],
+        "total-byte-weight": ["warn", { "maxNumericValue": 400000 }],
+        "unused-javascript": ["warn", { "maxNumericValue": 40000 }]
+      }
+    },
+    "upload": {
+      "target": "temporary-public-storage"
+    }
+  }
+}

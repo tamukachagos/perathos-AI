@@ -321,6 +321,32 @@ const leads = {
     );
     return rows.map(toLeadRecord);
   },
+  // The next three run PLATFORM-WIDE (no session tenant): the retention Cron and
+  // a DSAR span every tenant by design, so they use the base client. The Cron
+  // and DSAR endpoints are independently access-controlled (CRON_SECRET / IO).
+  async purgeExpired(asOf: Date): Promise<number> {
+    const result = await prisma.lead.deleteMany({
+      where: { retentionUntil: { not: null, lte: asOf } },
+    });
+    return result.count;
+  },
+  async findByContact(contact: string): Promise<LeadRecord[]> {
+    const key = contact.trim();
+    if (!key) return [];
+    const rows = await prisma.lead.findMany({
+      where: { contact: { equals: key, mode: "insensitive" } },
+      orderBy: { createdAt: "desc" },
+    });
+    return rows.map(toLeadRecord);
+  },
+  async deleteByContact(contact: string): Promise<number> {
+    const key = contact.trim();
+    if (!key) return 0;
+    const result = await prisma.lead.deleteMany({
+      where: { contact: { equals: key, mode: "insensitive" } },
+    });
+    return result.count;
+  },
 };
 
 interface LeadRow {
