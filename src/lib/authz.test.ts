@@ -19,7 +19,13 @@ afterEach(() => {
 
 describe("getCurrentTenant / requireTenant (mock mode)", () => {
   async function loadAuthz() {
-    vi.doMock("@/lib/env", () => ({ hasDatabase: () => false }));
+    // Preserve the real module surface (env, isMockMode, …) and only force the
+    // database gate off, so transitively-loaded modules (e.g. the adapter
+    // registry) still see a complete @/lib/env.
+    vi.doMock("@/lib/env", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/env")>("@/lib/env");
+      return { ...actual, hasDatabase: () => false };
+    });
     return import("./authz");
   }
 
