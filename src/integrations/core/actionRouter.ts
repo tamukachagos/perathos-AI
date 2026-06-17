@@ -29,9 +29,11 @@ import {
 import { consumeNonce } from "./approvalStore";
 import {
   getOperation,
+  settleOperation,
   startOperation,
   type OperationRecord,
 } from "./operationStore";
+import { logger } from "@/lib/logger";
 
 /**
  * The risky verbs that flow through approval gating. Keyed by `verb`; the value
@@ -111,6 +113,13 @@ export interface ExecuteParams {
   approvalToken?: string;
   /** Tests pass a fixed clock; defaults to Date.now(). */
   now?: number;
+  /**
+   * B17: settlement delay for async ops, DECOUPLED from `now`. A real clock
+   * keeps a real delay; tests pass 0 to settle immediately. Injecting `now` no
+   * longer collapses the delay to 0 (which defeated the pending→poll contract).
+   * Defaults to the store's MOCK_SETTLE_MS when unset.
+   */
+  settleDelayMs?: number;
 }
 
 export type ExecuteOutcome =
@@ -177,6 +186,7 @@ export async function executeAction(
     idempotencyKey,
     approvalToken,
     now = Date.now(),
+    settleDelayMs,
   } = params;
 
   const spec = GATED_VERBS[verb];
@@ -269,8 +279,9 @@ export async function executeAction(
     }
 
     // Single-use: consume the nonce. A replay of an otherwise-valid token is
-    // rejected here.
-    const consumed = consumeNonce(claims.nonce, tenantId);
+    // rejected here. The consume is atomic in the persistent store (UPDATE …
+    // WHERE consumed_at IS NULL), so a concurrent double-spend cannot win twice.
+    const consumed = await consumeNonce(claims.nonce, tenantId);
     if (!consumed.ok) {
       const reason: DenyReason =
         consumed.reason === "tenant_mismatch"
@@ -297,22 +308,70 @@ export async function executeAction(
 
   if (spec?.async) {
     const target = spec.target?.(payload) ?? verb;
-    const operation = startOperation({
+    // B7: idempotency is folded into (tenantId, idempotencyKey) by the store, so
+    // a retry re-attaches to the same op rather than starting a duplicate.
+    const operation = await startOperation({
       tenantId,
       verb,
       target,
       idempotencyKey,
-      settleDelayMs: params.now !== undefined ? 0 : undefined,
+      // B17: the settlement delay is explicit, NOT inferred from an injected
+      // clock. Tests pass settleDelayMs:0 for instant settlement.
+      settleDelayMs,
     });
+
+    // B2: actually CALL the adapter's action plane. The async verbs previously
+    // returned 202 without ever invoking the adapter and reconcile() then
+    // marked them `succeeded` unconditionally — so the owner was told a domain
+    // registered when nothing happened, and real failures reported success.
+    // Now: a failed dispatch settles the op to `failed`; a successful dispatch
+    // leaves it `pending` to be driven terminal by the vendor webhook/cron
+    // (mock: the reconcile sweep). Re-attached (idempotent) ops are NOT
+    // re-dispatched.
+    let settled = operation;
+    if (operation.status === "pending") {
+      try {
+        const result = await adapter.action({ verb, business, payload });
+        if (!result.ok) {
+          settled =
+            (await settleOperation(
+              operation.id,
+              "failed",
+              result.detail,
+              { dispatch: "adapter_rejected" },
+              tenantId,
+            )) ?? operation;
+        }
+        // result.ok === true: stay pending; webhook/cron settles to succeeded.
+      } catch (error) {
+        // A thrown adapter (e.g. unimplemented live mode / network) is a real
+        // failure — settle to `failed`, never silent success. Log the error
+        // CLASS only (no payload/PII).
+        logger.warn("action.async_dispatch_failed", {
+          verb,
+          errorClass: error instanceof Error ? error.name : "unknown",
+        });
+        settled =
+          (await settleOperation(
+            operation.id,
+            "failed",
+            "The provider could not start this action.",
+            { dispatch: "adapter_threw" },
+            tenantId,
+          )) ?? operation;
+      }
+    }
+
     await audit(AUDIT_ALLOW, {
       async: true,
-      operationId: operation.id,
+      operationId: settled.id,
       target,
+      opStatus: settled.status,
     });
     return {
       status: "accepted",
-      detail: `${spec.label} accepted — tracking operation ${operation.id}.`,
-      operation,
+      detail: `${spec.label} accepted — tracking operation ${settled.id}.`,
+      operation: settled,
     };
   }
 
@@ -329,7 +388,7 @@ export async function executeAction(
 export function readOperation(
   id: string,
   tenantId: string,
-): OperationRecord | null {
+): Promise<OperationRecord | null> {
   return getOperation(id, tenantId);
 }
 

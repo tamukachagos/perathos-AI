@@ -25,7 +25,7 @@ export async function GET(
   }
 
   const { id } = await context.params;
-  const op = readOperation(id, ctx.tenantId);
+  const op = await readOperation(id, ctx.tenantId);
   if (!op) {
     return NextResponse.json(
       { ok: false, error: "not_found" },

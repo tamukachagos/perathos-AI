@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+﻿import { beforeEach, describe, expect, it } from "vitest";
 import { executeAction } from "./actionRouter";
 import {
   DEFAULT_TOKEN_TTL_MS,
@@ -17,12 +17,16 @@ import { initialBusiness } from "@/lib/platformData";
 const repos = memoryRepositories;
 const TENANT = DEV_TENANT_ID;
 
-function approve(verb: string, payload: Record<string, unknown>, key: string) {
+async function approve(
+  verb: string,
+  payload: Record<string, unknown>,
+  key: string,
+): Promise<string> {
   const payloadHash = digestPayload(payload);
   const nonce = mintNonce();
   const expiresAt = Date.now() + DEFAULT_TOKEN_TTL_MS;
   const token = issueToken({ verb, payloadHash, idempotencyKey: key, nonce, expiresAt });
-  recordIssued({
+  await recordIssued({
     nonce,
     tenantId: TENANT,
     verb,
@@ -44,7 +48,7 @@ describe("ActionRouter — M6 entitlement gating", () => {
 
   it("denies a paid verb (domain.register) for a FREE tenant — before the token check", async () => {
     const payload = { domain: "example.co.za" };
-    const token = approve("domain.register", payload, "idem-free");
+    const token = await approve("domain.register", payload, "idem-free");
     const outcome = await executeAction(
       { audit: repos.audit, subscriptions: repos.subscriptions },
       {
@@ -66,7 +70,7 @@ describe("ActionRouter — M6 entitlement gating", () => {
   it("allows the same verb once the tenant is on Growth", async () => {
     await activatePlan(repos, TENANT, "growth");
     const payload = { domain: "example.co.za" };
-    const token = approve("domain.register", payload, "idem-paid");
+    const token = await approve("domain.register", payload, "idem-paid");
     const outcome = await executeAction(
       { audit: repos.audit, subscriptions: repos.subscriptions },
       {
@@ -86,7 +90,7 @@ describe("ActionRouter — M6 entitlement gating", () => {
 
   it("B9: FAILS CLOSED — an entitlement verb is DENIED when subscriptions repo is absent", async () => {
     const payload = { domain: "example.co.za" };
-    const token = approve("domain.register", payload, "idem-nosub");
+    const token = await approve("domain.register", payload, "idem-nosub");
     const outcome = await executeAction(
       { audit: repos.audit }, // no subscriptions dep
       {
@@ -111,7 +115,7 @@ describe("ActionRouter — M6 entitlement gating", () => {
   it("a NON-entitlement gated verb still works without the subscriptions dep", async () => {
     // hosting.publish carries no requiresEntitlement, so the gate does not apply.
     const payload = { slug: "joes-shop" };
-    const token = approve("hosting.publish", payload, "idem-pub");
+    const token = await approve("hosting.publish", payload, "idem-pub");
     const outcome = await executeAction(
       { audit: repos.audit }, // no subscriptions dep — fine for non-entitlement verb
       {

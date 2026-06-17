@@ -35,6 +35,81 @@ jobs:
       - name: Build
         run: npm run build
 
+  db-tests:
+    # W1 — Postgres-backed reliability tests. SEPARATE job so the keyless
+    # mock-mode `build` job above stays DB-free and still passes with no env.
+    # Spins up Postgres 16, applies migrations as the SUPERUSER (so the
+    # SECURITY DEFINER maintenance functions are owned by a role that bypasses
+    # RLS), then runs the DB suite as a NON-privileged app role (non-superuser,
+    # non-BYPASSRLS) so the RLS smoke test actually proves isolation.
+    name: Postgres reliability tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: launchdesk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply migrations (as superuser → owns SECURITY DEFINER functions)
+        env:
+          # `migrate deploy` runs as postgres so the reconcile/purge/DSAR
+          # SECURITY DEFINER functions are owned by a BYPASSRLS-capable role.
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/launchdesk_test
+        run: npx prisma migrate deploy
+
+      - name: Create the non-privileged app role + grant table access
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d launchdesk_test -v ON_ERROR_STOP=1 <<'SQL'
+          -- The app role is deliberately NOT superuser and NOT BYPASSRLS so the
+          -- RLS policies are enforced against it (the smoke test asserts this).
+          CREATE ROLE app_user WITH LOGIN PASSWORD 'app_pw' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
+          GRANT USAGE ON SCHEMA public TO app_user;
+          -- TRUNCATE is included only so the TEST suite can reset tables between
+          -- cases; it does not affect RLS enforcement (the smoke test asserts
+          -- the role is non-superuser / non-BYPASSRLS). Production app roles
+          -- would not be granted TRUNCATE.
+          GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public TO app_user;
+          GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+          GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO app_user;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE, TRUNCATE ON TABLES TO app_user;
+          SQL
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Run DB-backed tests (as the non-privileged app role)
+        env:
+          # Tests connect as app_user → RLS is enforced; SECURITY DEFINER
+          # functions still run as their postgres owner.
+          DATABASE_URL: postgresql://app_user:app_pw@localhost:5432/launchdesk_test
+          VITEST_DB: "1"
+        run: npm run test:db
+
   e2e:
     # Playwright golden-path E2E + Lighthouse budget check. Kept as its OWN job
     # so a browser/perf flake here is clearly separable from the core gate above.

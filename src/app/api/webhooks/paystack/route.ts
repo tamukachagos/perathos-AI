@@ -27,16 +27,17 @@ import {
   MissingProductionSecretError,
   requireProductionSecret,
 } from "@/lib/env";
+import { getStores } from "@/integrations/core/stores";
 
 export const dynamic = "force-dynamic";
 
 const PROVIDER = "paystack";
 
-// --- Idempotency ledger (per-process; a real deploy backs this with Redis/PG) -
-const globalForWebhook = globalThis as unknown as {
-  __paystackEvents?: Set<string>;
-};
-const seenEvents = (globalForWebhook.__paystackEvents ??= new Set());
+// B8/B1: webhook dedup is now backed by the env-gated reliability store —
+// persistent + atomic (exactly-once via the unique (provider, eventId)
+// constraint) when DATABASE_URL is set, in-memory in mock mode. Previously this
+// was a per-process globalThis Set, which let a redelivered webhook re-apply a
+// plan change on a different serverless lambda.
 
 /** Constant-time hex-string compare (no early-exit length leak beyond length). */
 function constantTimeEqualHex(a: string, b: string): boolean {
@@ -116,7 +117,9 @@ export async function POST(request: Request) {
         .update(rawBody)
         .digest("hex")}`,
   );
-  if (seenEvents.has(eventId)) {
+
+  const stores = await getStores();
+  if (await stores.webhookDedup.hasEvent(PROVIDER, eventId)) {
     // Idempotent: a redelivered event is acknowledged without re-applying.
     return NextResponse.json({ ok: true, deduped: true });
   }
@@ -172,10 +175,20 @@ export async function POST(request: Request) {
 
     if (!tenantId) {
       // Unknown / unverifiable subscription — acknowledge so Paystack stops
-      // retrying, but apply NOTHING and log.
+      // retrying, but apply NOTHING and log. Claim so a redelivery is a no-op.
       logger.info("paystack.webhook.unresolved", { event: event.event });
-      seenEvents.add(eventId);
+      await stores.webhookDedup.claimEvent(PROVIDER, eventId);
       return NextResponse.json({ ok: true, unresolved: true });
+    }
+
+    // B8/B13 — ATOMIC exactly-once claim BEFORE applying the side effect. The
+    // unique (provider, eventId) constraint makes this the single arbiter: if a
+    // concurrent redelivery already claimed it, claimEvent returns false and we
+    // skip re-applying. (The early hasEvent() above is a cheap fast-path; this
+    // is the race-free guarantee.)
+    const claimed = await stores.webhookDedup.claimEvent(PROVIDER, eventId);
+    if (!claimed) {
+      return NextResponse.json({ ok: true, deduped: true });
     }
 
     const plan: PlanId | null = isPlanId(data.metadata?.plan)
@@ -214,7 +227,7 @@ export async function POST(request: Request) {
       metadata: { event: event.event, eventId, provider: PROVIDER },
     });
 
-    seenEvents.add(eventId);
+    // Already claimed atomically above before applying.
     return NextResponse.json({ ok: true });
   } catch (error) {
     await captureError("paystack.webhook.failed", error);

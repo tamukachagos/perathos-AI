@@ -104,7 +104,7 @@ export async function POST(request: Request) {
   const expiresAt = Date.now() + DEFAULT_TOKEN_TTL_MS;
   const token = issueToken({ verb, payloadHash, idempotencyKey, nonce, expiresAt });
 
-  recordIssued({
+  await recordIssued({
     nonce,
     tenantId: ctx.tenantId,
     verb,

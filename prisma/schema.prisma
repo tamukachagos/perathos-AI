@@ -115,6 +115,8 @@ model Tenant {
   adapterConnections  AdapterConnection[]
   auditLog            AuditLog[]
   subscription        Subscription?
+  approvalNonces      ApprovalNonce[]
+  operations          Operation[]
 
   @@map("tenants")
 }
@@ -391,6 +393,75 @@ model Subscription {
   @@index([tenantId])
   @@index([provider, providerSubscriptionId])
   @@map("subscriptions")
+}
+
+// ---------------------------------------------------------------------------
+// W1 reliability stores — persistent backing for the approval nonce ledger, the
+// async operation store, and the webhook dedup ledger. These were previously
+// in-memory `globalThis` maps (B1/B7/B8), which break on serverless: approvals
+// fail as "already used", async ops 404 on poll, webhooks re-apply. Persisting
+// them with ATOMIC compare-and-set on consume (UPDATE ... WHERE consumed_at IS
+// NULL returning rowcount) makes single-use survive concurrency + multi-process.
+//
+// These tables are tenant-scoped and RLS-protected (see the W1 migration). They
+// are only ever touched by the Prisma store impl, selected when DATABASE_URL is
+// real; in mock mode the in-memory impl is used and these tables are never read.
+// ---------------------------------------------------------------------------
+
+// The single-use approval nonce ledger. consumedAt is the atomic claim marker:
+// the first UPDATE that flips it from NULL wins; a replay finds it non-NULL.
+model ApprovalNonce {
+  nonce          String    @id
+  tenantId       String
+  verb           String
+  payloadHash    String
+  idempotencyKey String
+  issuedAt       DateTime  @default(now())
+  expiresAt      DateTime
+  consumedAt     DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("approval_nonces")
+}
+
+// An async operation (domain.register / hosting.deploy / email.provision).
+// Idempotency is PER TENANT now (B7): the unique key is (tenantId, idempotencyKey)
+// so two tenants reusing the UI default "idem-1" no longer leak each other's op.
+model Operation {
+  id             String   @id
+  tenantId       String
+  verb           String
+  target         String
+  status         String   @default("pending")
+  detail         String
+  idempotencyKey String
+  settleAt       DateTime
+  result         Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+  @@index([status])
+  @@map("operations")
+}
+
+// Webhook dedup ledger (B8/B13): one row per processed event id. The unique
+// constraint is the exactly-once guarantee — a redelivery hits the conflict.
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  provider  String
+  eventId   String
+  createdAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider])
+  @@map("webhook_events")
 }
 
 // ---------------------------------------------------------------------------

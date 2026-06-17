@@ -13,6 +13,13 @@ export interface GeneratedProfile {
   profile: Business;
   /** Which fields the model is least sure about (surfaced for review). */
   lowConfidence: (keyof Business)[];
+  /**
+   * B12: true when the REAL model call was attempted but fell back to the
+   * deterministic mock heuristic (bad key / 401 / quota / network / bad JSON).
+   * Lets the operator/UI see that "AI is live" is not actually true, instead of
+   * the failure being silently swallowed. Absent/false on the genuine mock path.
+   */
+  degraded?: boolean;
 }
 
 const INDUSTRY_KEYWORDS: Array<{ match: RegExp; industry: string }> = [

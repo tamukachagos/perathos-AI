@@ -12,6 +12,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { Business } from "@/lib/types";
+import { logger } from "@/lib/logger";
 import { deriveProfile, type GeneratedProfile } from "./generateProfile";
 
 // Current Anthropic model id. Default Sonnet 4.6; override via ANTHROPIC_MODEL.
@@ -144,9 +145,28 @@ export async function generateBusinessProfileWithClaude(
       email: "",
     };
     return { profile, lowConfidence: lowConfidenceFor(claude) };
-  } catch {
-    // Never log the key or the raw description/PII. Fall back to the mock so the
-    // wizard always returns a usable draft.
-    return deriveProfile(description);
+  } catch (error) {
+    // B12: the real call was attempted and failed (bad key/401/quota/network/
+    // bad JSON/refusal). Previously this degraded SILENTLY — the operator
+    // believed AI was live while every request was the mock. Now we:
+    //   * log the error CLASS only (never the key, the raw description, or PII);
+    //   * surface a `degraded` flag so the caller/UI knows the result is the
+    //     fallback heuristic, not a live model output.
+    // Duck-type the SDK's APIError (it carries a numeric `status`) so we record
+    // a precise class WITHOUT a hard dependency on the SDK's class identity
+    // (which a test mock may not export). Never log the key/PII — only the class.
+    const status =
+      typeof error === "object" && error !== null && "status" in error
+        ? (error as { status?: unknown }).status
+        : undefined;
+    const errorClass =
+      typeof status === "number"
+        ? `APIError:${status}`
+        : error instanceof Error
+          ? error.name
+          : "unknown";
+    logger.warn("agent.claude.fallback", { errorClass });
+    const fallback = deriveProfile(description);
+    return { ...fallback, degraded: true };
   }
 }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+﻿import { beforeEach, describe, expect, it } from "vitest";
 import {
   executeAction,
   readOperation,
@@ -22,18 +22,18 @@ const TENANT = DEV_TENANT_ID;
 const ACTOR = "dev-user";
 
 // Issue a valid, recorded approval token bound to verb+payload+idempotencyKey.
-function approve(
+async function approve(
   verb: string,
   payload: Record<string, unknown>,
   idempotencyKey: string,
   opts: { ttlMs?: number; tenantId?: string } = {},
-): string {
+): Promise<string> {
   const tenantId = opts.tenantId ?? TENANT;
   const payloadHash = digestPayload(payload);
   const nonce = mintNonce();
   const expiresAt = Date.now() + (opts.ttlMs ?? DEFAULT_TOKEN_TTL_MS);
   const token = issueToken({ verb, payloadHash, idempotencyKey, nonce, expiresAt });
-  recordIssued({
+  await recordIssued({
     nonce,
     tenantId,
     verb,
@@ -87,7 +87,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
 
   it("allows a gated verb WITH a valid bound token (async → accepted/202) and audits", async () => {
     const payload = { domain: "example.co.za" };
-    const token = approve("domain.register", payload, "idem-async");
+    const token = await approve("domain.register", payload, "idem-async");
     const outcome = await run({
       payload,
       idempotencyKey: "idem-async",
@@ -101,7 +101,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
 
   it("rejects a SWAPPED payload (token bound to payload-hash)", async () => {
     const approvedPayload = { domain: "example.co.za" };
-    const token = approve("domain.register", approvedPayload, "idem-swap");
+    const token = await approve("domain.register", approvedPayload, "idem-swap");
 
     // Attacker swaps the payload after approval.
     const outcome = await run({
@@ -115,7 +115,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
 
   it("rejects a token redeemed for a DIFFERENT verb", async () => {
     const payload = { domain: "example.co.za" };
-    const token = approve("dns.write", payload, "idem-verb");
+    const token = await approve("dns.write", payload, "idem-verb");
     const outcome = await run({
       verb: "domain.register",
       payload,
@@ -128,7 +128,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
 
   it("rejects a token with a mismatched idempotency key", async () => {
     const payload = { domain: "example.co.za" };
-    const token = approve("domain.register", payload, "idem-A");
+    const token = await approve("domain.register", payload, "idem-A");
     const outcome = await run({
       payload,
       idempotencyKey: "idem-B",
@@ -140,7 +140,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
 
   it("is single-use: a replay of the same token is rejected", async () => {
     const payload = { account: "owner@example.com" };
-    const token = approve("payment.configure", payload, "idem-replay");
+    const token = await approve("payment.configure", payload, "idem-replay");
 
     const first = await run({
       verb: "payment.configure",
@@ -163,7 +163,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
   it("rejects an EXPIRED token", async () => {
     const payload = { domain: "example.co.za" };
     // Issue with a tiny TTL then verify well past expiry.
-    const token = approve("domain.register", payload, "idem-exp", { ttlMs: 1 });
+    const token = await approve("domain.register", payload, "idem-exp", { ttlMs: 1 });
     // executeAction defaults now=Date.now(); pass a future `now` via params.
     const outcome = await executeAction(
       { audit: memoryRepositories.audit, subscriptions: memoryRepositories.subscriptions },
@@ -187,7 +187,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
     await run({ approvalToken: undefined, idempotencyKey: "d1" });
     // Allow.
     const payload = { account: "x@y.co.za" };
-    const token = approve("payment.configure", payload, "a1");
+    const token = await approve("payment.configure", payload, "a1");
     await run({
       verb: "payment.configure",
       payload,
@@ -206,8 +206,10 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
 
   it("async op returns an OperationRef then SETTLES via reconciliation", async () => {
     const payload = { domain: "example.co.za" };
-    const token = approve("domain.register", payload, "idem-settle");
-    // Passing `now` makes the mock op settle with zero delay.
+    const token = await approve("domain.register", payload, "idem-settle");
+    // B17: settleDelayMs:0 (NOT an injected clock) makes the mock op settle
+    // immediately. The adapter is actually called (B2); the mock returns ok so
+    // the op stays pending until the reconcile sweep on read settles it.
     const outcome = await executeAction(
       { audit: memoryRepositories.audit, subscriptions: memoryRepositories.subscriptions },
       {
@@ -218,23 +220,23 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
         payload,
         idempotencyKey: "idem-settle",
         approvalToken: token,
-        now: Date.now(),
+        settleDelayMs: 0,
       },
     );
     expect(outcome.status).toBe("accepted");
     if (outcome.status !== "accepted") return;
 
-    const op = readOperation(outcome.operation.id, TENANT);
+    const op = await readOperation(outcome.operation.id, TENANT);
     expect(op).not.toBeNull();
     // reconcile() ran on read; with zero delay it should be terminal.
     expect(op?.status).toBe("succeeded");
 
     // Cross-tenant read is denied.
-    expect(readOperation(outcome.operation.id, "other-tenant")).toBeNull();
+    expect(await readOperation(outcome.operation.id, "other-tenant")).toBeNull();
   });
 
-  it("token verify: tamper with the signature is rejected", () => {
-    const token = approve("dns.write", { domain: "x.co.za" }, "v");
+  it("token verify: tamper with the signature is rejected", async () => {
+    const token = await approve("dns.write", { domain: "x.co.za" }, "v");
     const tampered = token.slice(0, -2) + (token.endsWith("aa") ? "bb" : "aa");
     const result = verifyToken(tampered);
     expect(result.ok).toBe(false);

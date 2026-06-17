@@ -1,66 +1,52 @@
-// Server-side state for approvals: the single-use nonce ledger that makes
-// otherwise-stateless HMAC tokens NON-replayable, plus a lightweight record of
-// issued approvals for observability/UI. In-memory and per-process — the same
-// shape a real deployment would back with Redis/Postgres. Reset on restart.
+// Approval nonce ledger — the single-use store that makes otherwise-stateless
+// HMAC tokens NON-replayable, tenant-scoped (B1/B8).
 //
-// Tenant-scoped: every record carries the tenantId that requested the approval,
-// so a token issued under one tenant cannot be consumed under another.
+// This module is now a thin async facade over the env-gated reliability-store
+// factory (./stores): in-memory in mock mode, Prisma/Postgres when DATABASE_URL
+// is real. The Postgres consume is an ATOMIC `UPDATE ... WHERE consumedAt IS
+// NULL` so single-use survives concurrency + multiple serverless processes
+// (previously these lived in a per-process globalThis map, which broke on
+// Vercel: approvals failed as "already used" on tokens never used).
 
-export interface ApprovalRecord {
-  nonce: string;
-  tenantId: string;
-  verb: string;
-  payloadHash: string;
-  idempotencyKey: string;
-  issuedAt: number;
-  expiresAt: number;
-  /** Set when the token is redeemed exactly once. */
-  consumedAt: number | null;
-}
+import { getStores } from "./stores";
+import { __resetReliabilityStores } from "./stores/memory";
+import type { ApprovalRecord, ConsumeResult } from "./stores/types";
 
-interface ApprovalStore {
-  byNonce: Map<string, ApprovalRecord>;
-}
+export type { ApprovalRecord, ConsumeResult } from "./stores/types";
 
-const globalStore = globalThis as unknown as {
-  __launchDeskApprovals?: ApprovalStore;
-};
-
-function store(): ApprovalStore {
-  if (!globalStore.__launchDeskApprovals) {
-    globalStore.__launchDeskApprovals = { byNonce: new Map() };
-  }
-  return globalStore.__launchDeskApprovals;
+/**
+ * Exposed for tests so they can run against a fresh in-memory ledger. Resets the
+ * whole in-memory reliability store (nonces + operations + webhook dedup share
+ * one backing map). No-op against Postgres (tests there truncate tables).
+ */
+export function __resetApprovalStore(): void {
+  __resetReliabilityStores();
 }
 
 /** Record a freshly issued approval (pending redemption). */
-export function recordIssued(record: Omit<ApprovalRecord, "consumedAt">): void {
-  store().byNonce.set(record.nonce, { ...record, consumedAt: null });
+export async function recordIssued(
+  record: Omit<ApprovalRecord, "consumedAt">,
+): Promise<void> {
+  const stores = await getStores();
+  await stores.approvals.recordIssued(record);
 }
 
-export function getApproval(nonce: string): ApprovalRecord | undefined {
-  return store().byNonce.get(nonce);
+export async function getApproval(
+  nonce: string,
+): Promise<ApprovalRecord | undefined> {
+  const stores = await getStores();
+  return stores.approvals.getApproval(nonce);
 }
-
-export type ConsumeResult =
-  | { ok: true }
-  | { ok: false; reason: "unknown_nonce" | "already_consumed" | "tenant_mismatch" };
 
 /**
  * Atomically consume a nonce for single use. Returns ok only the FIRST time;
  * any subsequent call with the same nonce (a replay) returns already_consumed.
  * The tenantId must match the tenant the approval was issued for.
  */
-export function consumeNonce(nonce: string, tenantId: string): ConsumeResult {
-  const rec = store().byNonce.get(nonce);
-  if (!rec) return { ok: false, reason: "unknown_nonce" };
-  if (rec.tenantId !== tenantId) return { ok: false, reason: "tenant_mismatch" };
-  if (rec.consumedAt !== null) return { ok: false, reason: "already_consumed" };
-  rec.consumedAt = Date.now();
-  return { ok: true };
-}
-
-/** Exposed for tests so they can run against a fresh ledger. */
-export function __resetApprovalStore(): void {
-  globalStore.__launchDeskApprovals = { byNonce: new Map() };
+export async function consumeNonce(
+  nonce: string,
+  tenantId: string,
+): Promise<ConsumeResult> {
+  const stores = await getStores();
+  return stores.approvals.consumeNonce(nonce, tenantId);
 }

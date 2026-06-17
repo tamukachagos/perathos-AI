@@ -165,8 +165,10 @@ const sites = {
     // Public route: no tenant in context. S7 — the slug is unique PER TENANT
     // now (not globally), so we resolve the single PUBLISHED site bearing it.
     // Restricting to status='published' keeps drafts from leaking and gives a
-    // deterministic public match. (B5/W1 will add a public-read RLS policy so
-    // this base-client read works under FORCE RLS — deferred to W1.)
+    // deterministic public match. B5/W1: the public_read_published RLS policy
+    // (and public_read_published_versions for the snapshot) makes this
+    // base-client read return the row even under FORCE ROW LEVEL SECURITY with
+    // no tenant in context.
     const row = await prisma.generatedSite.findFirst({
       where: { slug, status: "published" },
       include: { currentVersion: true },
@@ -336,30 +338,29 @@ const leads = {
     return rows.map(toLeadRecord);
   },
   // The next three run PLATFORM-WIDE (no session tenant): the retention Cron and
-  // a DSAR span every tenant by design, so they use the base client. The Cron
-  // and DSAR endpoints are independently access-controlled (CRON_SECRET / IO).
+  // a DSAR span every tenant by design. B5/W1: under FORCE RLS a base-client
+  // read/write returns 0 rows for the non-bypass app role, so these route
+  // through tightly-scoped SECURITY DEFINER functions (one per operation). The
+  // Cron and DSAR endpoints remain independently access-controlled
+  // (CRON_SECRET / Information Officer bearer).
   async purgeExpired(asOf: Date): Promise<number> {
-    const result = await prisma.lead.deleteMany({
-      where: { retentionUntil: { not: null, lte: asOf } },
-    });
-    return result.count;
+    const rows = await prisma.$queryRaw<{ purge_expired_leads: number }[]>`
+      SELECT purge_expired_leads(${asOf}) AS purge_expired_leads`;
+    return Number(rows[0]?.purge_expired_leads ?? 0);
   },
   async findByContact(contact: string): Promise<LeadRecord[]> {
     const key = contact.trim();
     if (!key) return [];
-    const rows = await prisma.lead.findMany({
-      where: { contact: { equals: key, mode: "insensitive" } },
-      orderBy: { createdAt: "desc" },
-    });
+    const rows = await prisma.$queryRaw<LeadRow[]>`
+      SELECT * FROM find_leads_by_contact(${key})`;
     return rows.map(toLeadRecord);
   },
   async deleteByContact(contact: string): Promise<number> {
     const key = contact.trim();
     if (!key) return 0;
-    const result = await prisma.lead.deleteMany({
-      where: { contact: { equals: key, mode: "insensitive" } },
-    });
-    return result.count;
+    const rows = await prisma.$queryRaw<{ delete_leads_by_contact: number }[]>`
+      SELECT delete_leads_by_contact(${key}) AS delete_leads_by_contact`;
+    return Number(rows[0]?.delete_leads_by_contact ?? 0);
   },
 };
 
@@ -571,15 +572,22 @@ const subscriptions = {
     return toSubscriptionRecord(row);
   },
   // Cross-tenant lookup (no session): the webhook resolves the owning tenant
-  // from the provider's subscription id. Like the POPIA Cron/DSAR ops, this
-  // intentionally uses the base client; the webhook is signature-authenticated.
+  // from the provider's subscription id. B5/W1: under FORCE RLS a base-client
+  // read returns nothing for the non-bypass app role, so we resolve the owning
+  // tenantId via a SECURITY DEFINER function, then read the full row INSIDE
+  // withTenant(tenantId) so the rest of the read is RLS-scoped normally.
   async getByProviderId(
     provider: string,
     providerSubscriptionId: string,
   ): Promise<SubscriptionRecord | null> {
-    const row = await prisma.subscription.findFirst({
-      where: { provider, providerSubscriptionId },
-    });
+    const resolved = await prisma.$queryRaw<{ subscription_tenant_by_provider: string | null }[]>`
+      SELECT subscription_tenant_by_provider(${provider}, ${providerSubscriptionId})
+        AS subscription_tenant_by_provider`;
+    const tenantId = resolved[0]?.subscription_tenant_by_provider ?? null;
+    if (!tenantId) return null;
+    const row = await withTenant(tenantId, (tx) =>
+      tx.subscription.findUnique({ where: { tenantId } }),
+    );
     return row ? toSubscriptionRecord(row) : null;
   },
 };

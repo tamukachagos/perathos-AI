@@ -89,7 +89,7 @@ export async function requestApprovalAction(
   });
 
   // Record the nonce so the token is single-use, scoped to this tenant.
-  recordIssued({
+  await recordIssued({
     nonce,
     tenantId: ctx.tenantId,
     verb: request.verb,
