@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Copy, History, LogIn, Play, Sparkles } from "lucide-react";
+import { Copy, History, LogIn, Play, Sparkles, Wand2 } from "lucide-react";
 import type { Business, PublishedSites } from "@/lib/types";
 import { evaluateAdapters, readinessScore } from "@/integrations/core/registry";
 import { buildPublishedSite } from "@/lib/siteEngine";
@@ -28,6 +28,33 @@ import { BusinessProfile } from "./BusinessProfile";
 import { SitePreview } from "./SitePreview";
 import { LaunchChecklist } from "./LaunchChecklist";
 import { AgentOps, AnalyticsPanel, ArchitecturePanel } from "./LowerPanels";
+import { OnboardingWizard } from "./OnboardingWizard";
+import { ApprovalDialog } from "./ApprovalDialog";
+
+// Maps a gated checklist row to the ActionRouter verb + the payload the approval
+// binds to. Only authenticated sessions can approve (the flow needs a tenant).
+interface GatedActionSpec {
+  verb: string;
+  label: string;
+  payload: (business: Business) => Record<string, unknown>;
+}
+const GATED_ACTION_BY_KEY: Record<string, GatedActionSpec> = {
+  domain: {
+    verb: "domain.register",
+    label: "Register domain",
+    payload: (b) => ({ domain: b.domain }),
+  },
+  payments: {
+    verb: "payment.configure",
+    label: "Configure payments",
+    payload: (b) => ({ account: b.email || b.name }),
+  },
+  email: {
+    verb: "email.provision",
+    label: "Provision mailboxes",
+    payload: (b) => ({ domain: b.domain, email: b.email }),
+  },
+};
 
 interface DashboardProps {
   authenticated?: boolean;
@@ -60,6 +87,8 @@ export function Dashboard({
   const [notice, setNotice] = useState("");
   const [versions, setVersions] = useState<SiteVersionRecord[] | null>(null);
   const [versionsSlug, setVersionsSlug] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [approval, setApproval] = useState<GatedActionSpec | null>(null);
   const migratedRef = useRef(false);
 
   useEffect(() => {
@@ -141,6 +170,23 @@ export function Dashboard({
     setNotice("AI update drafted — review it in the preview before publishing.");
   }
 
+  function applyGeneratedProfile(profile: Business) {
+    setBusiness((current) => ({ ...current, ...profile }));
+    setWizardOpen(false);
+    setActiveStep("profile");
+    setNotice("Draft profile applied — review it, then publish when ready.");
+  }
+
+  function openApproval(stepKey: string) {
+    const spec = GATED_ACTION_BY_KEY[stepKey];
+    if (!spec) return;
+    if (!authenticated) {
+      setNotice("Sign in to approve this action.");
+      return;
+    }
+    setApproval(spec);
+  }
+
   async function publishDraft() {
     if (authenticated) {
       try {
@@ -220,6 +266,14 @@ export function Dashboard({
                 Sign in
               </Link>
             )}
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => setWizardOpen(true)}
+            >
+              <Wand2 size={16} />
+              Describe your business
+            </button>
             <button className="ghost-button" type="button" onClick={runAgentUpdate}>
               <Sparkles size={16} />
               AI update
@@ -285,6 +339,8 @@ export function Dashboard({
             adapters={adapters}
             published={published}
             setActiveStep={setActiveStep}
+            gatedKeys={Object.keys(GATED_ACTION_BY_KEY)}
+            onApprove={openApproval}
           />
         </section>
 
@@ -341,6 +397,24 @@ export function Dashboard({
           </section>
         ) : null}
       </main>
+
+      {wizardOpen ? (
+        <OnboardingWizard
+          onApply={applyGeneratedProfile}
+          onClose={() => setWizardOpen(false)}
+        />
+      ) : null}
+
+      {approval ? (
+        <ApprovalDialog
+          verb={approval.verb}
+          label={approval.label}
+          business={business}
+          payload={approval.payload(business)}
+          onClose={() => setApproval(null)}
+          onResult={(message) => setNotice(message)}
+        />
+      ) : null}
     </div>
   );
 }

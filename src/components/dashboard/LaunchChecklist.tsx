@@ -25,6 +25,10 @@ interface Props {
   adapters: EvaluatedChecklistAdapter[];
   published: boolean;
   setActiveStep: (key: string) => void;
+  /** Checklist keys that have a gated ActionRouter verb behind them. */
+  gatedKeys?: string[];
+  /** Open the approval dialog for a gated checklist key. */
+  onApprove?: (key: string) => void;
 }
 
 export function LaunchChecklist({
@@ -32,10 +36,14 @@ export function LaunchChecklist({
   adapters,
   published,
   setActiveStep,
+  gatedKeys = [],
+  onApprove,
 }: Props) {
   const selected =
     adapters.find((step) => step.key === activeStep) || adapters[0];
   const SelectedIcon = checklistIcons[selected.key];
+  const selectedGated =
+    gatedKeys.includes(selected.key) && selected.status === STATUS.REVIEW;
 
   return (
     <section className="panel checklist-panel">
@@ -83,7 +91,18 @@ export function LaunchChecklist({
           <strong>{selected.title}</strong>
           <p>{selected.detail}</p>
         </div>
-        <ChevronRight size={18} />
+        {selectedGated && onApprove ? (
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => onApprove(selected.key)}
+          >
+            <ShieldCheck size={16} />
+            Approve
+          </button>
+        ) : (
+          <ChevronRight size={18} />
+        )}
       </div>
     </section>
   );

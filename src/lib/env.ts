@@ -51,7 +51,28 @@ export const env = {
 
   /** Auth.js secret. Optional in mock mode (a dev secret is used instead). */
   authSecret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+
+  /**
+   * Secret used to sign single-use approval tokens (M3 ActionRouter). Optional:
+   * in mock mode a stable dev secret is used so the approval flow is fully
+   * exercisable with no secrets. Real deployments MUST set this; it is only ever
+   * read server-side in the action plane.
+   */
+  approvalSecret:
+    process.env.LAUNCH_DESK_APPROVAL_SECRET ??
+    process.env.AUTH_SECRET ??
+    process.env.NEXTAUTH_SECRET,
 } as const;
+
+/**
+ * Resolve the HMAC key for approval tokens. Falls back to a stable dev key in
+ * mock mode so the whole approval flow runs with no secrets configured. Real
+ * deployments set LAUNCH_DESK_APPROVAL_SECRET (or AUTH_SECRET).
+ */
+const DEV_APPROVAL_SECRET = "launch-desk-dev-approval-secret-not-for-production";
+export function approvalSecret(): string {
+  return env.approvalSecret ?? DEV_APPROVAL_SECRET;
+}
 
 /** True when we are running entirely on mocks (the M0 default). */
 export function isMockMode(): boolean {
