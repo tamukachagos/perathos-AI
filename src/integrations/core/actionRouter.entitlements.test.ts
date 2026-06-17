@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { executeAction } from "./actionRouter";
 import {
   DEFAULT_TOKEN_TTL_MS,
-  hashPayload,
+  digestPayload,
   issueToken,
   mintNonce,
 } from "./approvalToken";
@@ -18,7 +18,7 @@ const repos = memoryRepositories;
 const TENANT = DEV_TENANT_ID;
 
 function approve(verb: string, payload: Record<string, unknown>, key: string) {
-  const payloadHash = hashPayload(payload);
+  const payloadHash = digestPayload(payload);
   const nonce = mintNonce();
   const expiresAt = Date.now() + DEFAULT_TOKEN_TTL_MS;
   const token = issueToken({ verb, payloadHash, idempotencyKey: key, nonce, expiresAt });
@@ -84,7 +84,7 @@ describe("ActionRouter — M6 entitlement gating", () => {
     expect(outcome.status).toBe("accepted");
   });
 
-  it("entitlement check is SKIPPED when subscriptions repo is not wired (back-compat)", async () => {
+  it("B9: FAILS CLOSED — an entitlement verb is DENIED when subscriptions repo is absent", async () => {
     const payload = { domain: "example.co.za" };
     const token = approve("domain.register", payload, "idem-nosub");
     const outcome = await executeAction(
@@ -100,7 +100,30 @@ describe("ActionRouter — M6 entitlement gating", () => {
         now: Date.now(),
       },
     );
-    // No entitlement gate applied → proceeds to the async accept.
-    expect(outcome.status).toBe("accepted");
+    // Without the subscriptions dep we cannot prove entitlement → deny, never
+    // silently skip the billing gate (B9).
+    expect(outcome.status).toBe("denied");
+    if (outcome.status === "denied") {
+      expect(outcome.reason).toBe("entitlement_required");
+    }
+  });
+
+  it("a NON-entitlement gated verb still works without the subscriptions dep", async () => {
+    // hosting.publish carries no requiresEntitlement, so the gate does not apply.
+    const payload = { slug: "joes-shop" };
+    const token = approve("hosting.publish", payload, "idem-pub");
+    const outcome = await executeAction(
+      { audit: repos.audit }, // no subscriptions dep — fine for non-entitlement verb
+      {
+        tenantId: TENANT,
+        actorId: "dev-user",
+        verb: "hosting.publish",
+        business: initialBusiness,
+        payload,
+        idempotencyKey: "idem-pub",
+        approvalToken: token,
+      },
+    );
+    expect(outcome.status).toBe("allowed"); // synchronous publish
   });
 });

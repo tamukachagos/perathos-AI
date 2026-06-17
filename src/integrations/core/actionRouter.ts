@@ -22,7 +22,7 @@ import { checkEntitlement } from "@/lib/billing/entitlements";
 import { getAdapter } from "./registry";
 import type { ProviderInterface } from "./types";
 import {
-  hashPayload,
+  digestPayload,
   verifyToken,
   type ApprovalClaims,
 } from "./approvalToken";
@@ -139,7 +139,8 @@ export type DenyReason =
   | "idempotency_mismatch"
   | "replayed_token"
   | "tenant_mismatch"
-  | "entitlement_required";
+  | "entitlement_required"
+  | "unknown_verb";
 
 /** Audit action names — one stream, allow/deny distinguished by suffix. */
 const AUDIT_ALLOW = "action.allowed";
@@ -148,9 +149,11 @@ const AUDIT_DENY = "action.denied";
 interface RouterDeps {
   audit: AuditRepository;
   /**
-   * Subscriptions repo, required only to enforce paid-plan entitlements on verbs
-   * that carry `requiresEntitlement` (M6). Optional so existing call sites that
-   * pass only `audit` keep working; when absent, entitlement checks are skipped.
+   * Subscriptions repo, REQUIRED to dispatch any verb that carries
+   * `requiresEntitlement` (M6/B9). It is typed optional only so call sites that
+   * exclusively dispatch non-entitlement verbs need not pass it; for an
+   * entitlement-bearing verb the gate FAILS CLOSED (denies) when it is absent,
+   * rather than silently skipping the check.
    */
   subscriptions?: Repositories["subscriptions"];
 }
@@ -177,7 +180,7 @@ export async function executeAction(
   } = params;
 
   const spec = GATED_VERBS[verb];
-  const payloadHash = hashPayload(payload);
+  const payloadHash = digestPayload(payload);
 
   // Helper: append-only audit on every path, with a PII-free summary. The raw
   // payload and token are NEVER written — only the bound hash + idempotency key.
@@ -201,10 +204,19 @@ export async function executeAction(
     return { status: "denied", reason, detail };
   };
 
-  // --- Entitlement gate (M6): a paid-plan verb is rejected for a free tenant
+  // --- Entitlement gate (M6/B9): a paid-plan verb is rejected for a free tenant
   // BEFORE the approval token is even checked, so an unentitled action can't be
-  // approved. Skipped when the subscriptions repo isn't wired (back-compat).
-  if (spec?.requiresEntitlement && deps.subscriptions) {
+  // approved. FAIL CLOSED: if a verb declares `requiresEntitlement` but the
+  // subscriptions repo is not wired, we cannot prove entitlement, so we DENY
+  // (never silently skip the gate). Callers MUST pass `subscriptions` for any
+  // entitlement-bearing verb (see RouterDeps).
+  if (spec?.requiresEntitlement) {
+    if (!deps.subscriptions) {
+      return deny(
+        "entitlement_required",
+        "Entitlement could not be verified for this action.",
+      );
+    }
     const check = await checkEntitlement(
       deps.subscriptions,
       tenantId,
@@ -273,10 +285,15 @@ export async function executeAction(
     }
   }
 
-  // --- Allowed. Async verbs return 202 + an OperationRef; the rest run inline.
-  const adapter = getAdapter(
-    spec?.interfaceName ?? inferInterface(verb),
-  );
+  // --- Allowed. Resolve the target adapter interface. S9: DEFAULT-DENY — an
+  // ungated verb whose namespace does not map to a known provider interface is
+  // rejected rather than silently routed to a real action plane. A typo'd or
+  // attacker-supplied verb therefore cannot reach an adapter ungated.
+  const interfaceName = spec?.interfaceName ?? inferInterface(verb);
+  if (!interfaceName) {
+    return deny("unknown_verb", `"${verb}" is not a recognised action.`);
+  }
+  const adapter = getAdapter(interfaceName);
 
   if (spec?.async) {
     const target = spec.target?.(payload) ?? verb;
@@ -317,11 +334,15 @@ export function readOperation(
 }
 
 /**
- * Best-effort mapping from an ungated verb to its adapter interface, used only
- * for verbs not in GATED_VERBS (so the router can still dispatch them). Ungated
- * verbs are namespaced `interface.verb` where interface maps below.
+ * Map an ungated verb to its adapter interface, used only for verbs not in
+ * GATED_VERBS (so the router can still dispatch known read-only/ungated verbs).
+ * Ungated verbs are namespaced `interface.verb` where the interface maps below.
+ *
+ * S9 — DEFAULT-DENY: an unknown namespace returns `null` so the caller refuses
+ * the verb. We never fall back to a real action plane (previously HostingProvider),
+ * which would route a typo'd/attacker-supplied verb to a live adapter ungated.
  */
-function inferInterface(verb: string): ProviderInterface {
+function inferInterface(verb: string): ProviderInterface | null {
   const ns = verb.split(".")[0];
   const map: Record<string, ProviderInterface> = {
     domain: "DomainProvider",
@@ -334,5 +355,5 @@ function inferInterface(verb: string): ProviderInterface {
     analytics: "AnalyticsProvider",
     agent: "AgentProvider",
   };
-  return map[ns] ?? "HostingProvider";
+  return map[ns] ?? null;
 }

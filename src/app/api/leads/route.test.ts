@@ -6,16 +6,19 @@ import { DEV_TENANT_ID } from "@/lib/db/seed";
 const SEED_SLUG = "maboneng-mobile-spa";
 const SEED_BUSINESS_ID = "seed-business-maboneng";
 
+import { NextRequest } from "next/server";
+
 let ip = 0;
-function leadRequest(body: unknown): Request {
-  // Unique client key per request so the per-process rate limiter does not
-  // bleed between independent test cases.
+function leadRequest(body: unknown): NextRequest {
+  // Unique PLATFORM client IP per request (x-real-ip, which Vercel sets and a
+  // client cannot spoof) so the per-process rate limiter does not bleed between
+  // independent test cases. Raw x-forwarded-for is intentionally NOT trusted.
   ip += 1;
-  return new Request("http://localhost/api/leads", {
+  return new NextRequest("http://localhost/api/leads", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-forwarded-for": `10.0.0.${ip}`,
+      "x-real-ip": `10.0.0.${ip}`,
     },
     body: JSON.stringify(body),
   });

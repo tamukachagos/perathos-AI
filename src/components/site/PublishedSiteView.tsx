@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { PublishedSite } from "@/lib/types";
 import { initialsOf, whatsappLink } from "@/lib/format";
-import { buildBusinessSchema } from "@/lib/siteEngine";
+import { buildBusinessSchema, renderJsonLd } from "@/lib/siteEngine";
 import { sanitizeUrl } from "@/lib/sanitize";
 import { LeadForm } from "./LeadForm";
 import { ConsentBanner } from "./ConsentBanner";
@@ -40,14 +40,17 @@ export function PublishedSiteView({
     ) ?? null;
   const mailHref = site.email ? sanitizeUrl(`mailto:${site.email}`) : null;
   const domainHref = site.domain ? sanitizeUrl(`https://${site.domain}`) : null;
-  const schema = buildBusinessSchema(site);
+  // S8: escape `<`/`/` so a `</script>` payload in any field cannot break out of
+  // the JSON-LD script tag (see renderJsonLd). Defence in depth over publish-time
+  // sanitizeText.
+  const schemaJson = renderJsonLd(buildBusinessSchema(site));
 
   return (
     <main className="published-shell">
       {/* Local SEO: structured data so the business can surface in Google's Local Pack / Maps. */}
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+        dangerouslySetInnerHTML={{ __html: schemaJson }}
       />
 
       <header className="published-header">

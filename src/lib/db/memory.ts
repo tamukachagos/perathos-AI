@@ -25,7 +25,10 @@ import { seedBusiness, seedSite } from "./seed";
 
 interface Store {
   businesses: Map<string, BusinessRecord>;
-  sites: Map<string, SiteRecord>; // keyed by slug (the CURRENT version)
+  // S7: keyed by `${tenantId}:${slug}` so slug uniqueness is PER TENANT, not
+  // global — two tenants may both hold "joes-shop" without colliding or
+  // squatting each other's slug.
+  sites: Map<string, SiteRecord>; // CURRENT version, per (tenant, slug)
   siteVersions: SiteVersionRecord[]; // append-only history across all sites
   leads: LeadRecord[];
   audit: AuditEntry[];
@@ -43,7 +46,7 @@ function createStore(): Store {
   const site = seedSite();
   return {
     businesses: new Map([[business.id, business]]),
-    sites: new Map([[site.slug, site]]),
+    sites: new Map([[siteKey(site.tenantId, site.slug), site]]),
     siteVersions: [
       {
         id: `ver_${site.id}_1`,
@@ -75,6 +78,11 @@ function nextId(prefix: string): string {
   const s = store();
   s.seq += 1;
   return `${prefix}_${s.seq.toString(36)}_${Date.now().toString(36)}`;
+}
+
+/** Composite key for the per-tenant slug scoping (S7). */
+function siteKey(tenantId: string, slug: string): string {
+  return `${tenantId}:${slug}`;
 }
 
 // --- Repositories ------------------------------------------------------------
@@ -130,7 +138,12 @@ const sites = {
     return [...store().sites.values()].filter((s) => s.tenantId === tenantId);
   },
   async getBySlug(slug: string): Promise<SiteRecord | null> {
-    return store().sites.get(slug) ?? null;
+    // Public route: no tenant in context. The slug is unique PER TENANT (S7),
+    // so resolve the single published site that carries it. (In practice a
+    // public host→slug mapping resolves the tenant; here we return the match.)
+    return (
+      [...store().sites.values()].find((site) => site.slug === slug) ?? null
+    );
   },
   async publish(
     tenantId: string,
@@ -138,8 +151,13 @@ const sites = {
     site: PublishedSite,
   ): Promise<SiteRecord> {
     const s = store();
-    const existing = s.sites.get(site.slug);
+    // S7: look up the existing site SCOPED TO THIS TENANT. A different tenant's
+    // site with the same slug is invisible here, so it can neither be
+    // overwritten nor block this tenant from using the slug.
+    const existing = s.sites.get(siteKey(tenantId, site.slug));
     if (existing && existing.tenantId !== tenantId) {
+      // Defensive: the composite key already scopes by tenant, but verify the
+      // stored owner matches the caller before versioning (S7).
       throw new Error(`Site ${site.slug} is owned by another tenant`);
     }
     const record: SiteRecord = {
@@ -150,7 +168,7 @@ const sites = {
       version: existing ? existing.version + 1 : 1,
       site,
     };
-    s.sites.set(site.slug, record);
+    s.sites.set(siteKey(tenantId, site.slug), record);
     // Append a new immutable version and re-point "current" to it.
     for (const v of s.siteVersions) {
       if (v.siteId === record.id) v.isCurrent = false;

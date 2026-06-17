@@ -162,11 +162,13 @@ const sites = {
     return rows.filter((r) => r.currentVersion).map(toSiteRecord);
   },
   async getBySlug(slug: string): Promise<SiteRecord | null> {
-    // Public route: no tenant in context. We read the published row directly
-    // (the slug is globally unique). RLS still applies, so this runs outside a
-    // withTenant() transaction using a service read — see note below.
-    const row = await prisma.generatedSite.findUnique({
-      where: { slug },
+    // Public route: no tenant in context. S7 — the slug is unique PER TENANT
+    // now (not globally), so we resolve the single PUBLISHED site bearing it.
+    // Restricting to status='published' keeps drafts from leaking and gives a
+    // deterministic public match. (B5/W1 will add a public-read RLS policy so
+    // this base-client read works under FORCE RLS — deferred to W1.)
+    const row = await prisma.generatedSite.findFirst({
+      where: { slug, status: "published" },
       include: { currentVersion: true },
     });
     if (!row || !row.currentVersion) return null;
@@ -179,12 +181,21 @@ const sites = {
   ): Promise<SiteRecord> {
     const snapshot = site as unknown as Prisma.InputJsonValue;
     const row = await withTenant(tenantId, async (tx) => {
-      const existing = await tx.generatedSite.findUnique({
-        where: { slug: site.slug },
+      // S7: resolve the existing site SCOPED TO THIS TENANT (slug is unique per
+      // tenant now). A different tenant's same-slug site is not matched here, so
+      // it can neither be overwritten nor squat this tenant's slug. The explicit
+      // tenantId filter is belt-and-braces with the withTenant RLS scope.
+      const existing = await tx.generatedSite.findFirst({
+        where: { slug: site.slug, tenantId },
         include: { currentVersion: true },
       });
 
       if (existing) {
+        // Verify ownership before versioning (S7) — never version another
+        // tenant's row even if a future query change widened the match.
+        if (existing.tenantId !== tenantId) {
+          throw new Error(`Site ${site.slug} is owned by another tenant`);
+        }
         const nextVersion = (existing.currentVersion?.version ?? 0) + 1;
         const version = await tx.siteVersion.create({
           data: { tenantId, siteId: existing.id, version: nextVersion, snapshot },

@@ -5,7 +5,7 @@ import {
 } from "./actionRouter";
 import {
   DEFAULT_TOKEN_TTL_MS,
-  hashPayload,
+  digestPayload,
   issueToken,
   mintNonce,
   verifyToken,
@@ -13,6 +13,8 @@ import {
 import { recordIssued, __resetApprovalStore } from "./approvalStore";
 import { __resetOperationStore } from "./operationStore";
 import { memoryRepositories, __resetMemoryStore } from "@/lib/db/memory";
+import { __resetBillingStore } from "@/integrations/payment/subscription";
+import { activatePlan } from "@/lib/billing/service";
 import { DEV_TENANT_ID } from "@/lib/db/seed";
 import { initialBusiness } from "@/lib/platformData";
 
@@ -27,7 +29,7 @@ function approve(
   opts: { ttlMs?: number; tenantId?: string } = {},
 ): string {
   const tenantId = opts.tenantId ?? TENANT;
-  const payloadHash = hashPayload(payload);
+  const payloadHash = digestPayload(payload);
   const nonce = mintNonce();
   const expiresAt = Date.now() + (opts.ttlMs ?? DEFAULT_TOKEN_TTL_MS);
   const token = issueToken({ verb, payloadHash, idempotencyKey, nonce, expiresAt });
@@ -45,8 +47,12 @@ function approve(
 
 type ExecParams = Parameters<typeof executeAction>[1];
 function run(params: Partial<ExecParams>) {
+  // Wire the subscriptions repo so entitlement-bearing verbs pass the B9 gate
+  // (the tenant is put on Pro in beforeEach). This test file exercises token
+  // binding / async / audit, not the entitlement gate (that lives in
+  // actionRouter.entitlements.test.ts).
   return executeAction(
-    { audit: memoryRepositories.audit },
+    { audit: memoryRepositories.audit, subscriptions: memoryRepositories.subscriptions },
     {
       tenantId: TENANT,
       actorId: ACTOR,
@@ -60,10 +66,14 @@ function run(params: Partial<ExecParams>) {
 }
 
 describe("ActionRouter — gating, token binding, audit, async", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     __resetMemoryStore();
     __resetApprovalStore();
     __resetOperationStore();
+    __resetBillingStore();
+    // Entitle the test tenant so B9's fail-closed gate passes for paid verbs;
+    // this file isn't testing entitlements (see actionRouter.entitlements.test).
+    await activatePlan(memoryRepositories, TENANT, "pro");
   });
 
   it("denies a gated verb with NO approval token, and audits the denial", async () => {
@@ -156,7 +166,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
     const token = approve("domain.register", payload, "idem-exp", { ttlMs: 1 });
     // executeAction defaults now=Date.now(); pass a future `now` via params.
     const outcome = await executeAction(
-      { audit: memoryRepositories.audit },
+      { audit: memoryRepositories.audit, subscriptions: memoryRepositories.subscriptions },
       {
         tenantId: TENANT,
         actorId: ACTOR,
@@ -199,7 +209,7 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
     const token = approve("domain.register", payload, "idem-settle");
     // Passing `now` makes the mock op settle with zero delay.
     const outcome = await executeAction(
-      { audit: memoryRepositories.audit },
+      { audit: memoryRepositories.audit, subscriptions: memoryRepositories.subscriptions },
       {
         tenantId: TENANT,
         actorId: ACTOR,
@@ -240,5 +250,19 @@ describe("ActionRouter — gating, token binding, audit, async", () => {
     expect(outcome.status).toBe("allowed");
     const log = await memoryRepositories.audit.list(TENANT);
     expect(log.some((e) => e.action === "action.allowed")).toBe(true);
+  });
+
+  it("S9: DENIES an unknown/ungated verb (default-deny, never routed to an adapter)", async () => {
+    const outcome = await run({
+      verb: "bogus.doStuff", // unknown namespace — not in GATED_VERBS nor the map
+      payload: {},
+      idempotencyKey: "u1",
+      approvalToken: undefined,
+    });
+    expect(outcome.status).toBe("denied");
+    if (outcome.status === "denied") expect(outcome.reason).toBe("unknown_verb");
+    // The denial is audited like every other path.
+    const log = await memoryRepositories.audit.list(TENANT);
+    expect(log.some((e) => e.action === "action.denied")).toBe(true);
   });
 });

@@ -23,7 +23,7 @@
 // only here, server-side, via env.approvalSecret() — in mock mode a stable dev
 // key keeps the flow runnable with no secrets.
 
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { approvalSecret } from "@/lib/env";
 
 /** Default token lifetime: short, since approval-to-redeem is interactive. */
@@ -73,13 +73,15 @@ export function canonicalize(value: unknown): string {
     .join(",")}}`;
 }
 
-/** SHA-256-equivalent payload hash (hex). Uses HMAC-less digest via createHmac. */
-export function hashPayload(payload: unknown): string {
-  // We use createHmac with an empty key as a portable SHA-256; the binding
-  // security comes from the signed token, not from this digest being keyed.
-  return createHmac("sha256", "payload-digest")
-    .update(canonicalize(payload ?? {}))
-    .digest("hex");
+/**
+ * Plain SHA-256 (hex) of the canonicalised payload — a binding DIGEST, not a
+ * keyed MAC (S5). The binding security comes entirely from the signed token
+ * (the digest is part of the signed header); this value is never relied on as a
+ * secret-keyed authenticator, so an unkeyed digest is the correct, clearer
+ * primitive. Renamed from `hashPayload` so no one later mistakes it for a MAC.
+ */
+export function digestPayload(payload: unknown): string {
+  return createHash("sha256").update(canonicalize(payload ?? {})).digest("hex");
 }
 
 function sign(payloadToSign: string): Buffer {

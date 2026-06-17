@@ -16,13 +16,17 @@
 // The owning tenant is resolved from the provider subscription id (NOT a
 // session), exactly like the cross-tenant lead ops.
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getRepositories } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { captureError } from "@/lib/observability";
 import { isPlanId, type PlanId } from "@/lib/billing/plans";
 import { activatePlan, cancelPlan } from "@/lib/billing/service";
+import {
+  MissingProductionSecretError,
+  requireProductionSecret,
+} from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -34,19 +38,26 @@ const globalForWebhook = globalThis as unknown as {
 };
 const seenEvents = (globalForWebhook.__paystackEvents ??= new Set());
 
+/** Constant-time hex-string compare (no early-exit length leak beyond length). */
+function constantTimeEqualHex(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && timingSafeEqual(ab, bb);
+}
+
 /**
- * Verify the Paystack signature. STUB in mock mode (no secret => accept) so the
- * webhook is testable locally; with PAYSTACK_SECRET_KEY set, the HMAC-SHA512 of
- * the raw body must match `x-paystack-signature` (constant-time).
+ * Verify the Paystack signature (B3/S1). FAIL CLOSED: when PAYSTACK_SECRET_KEY
+ * is unset, the request is ACCEPTED only in explicit dev/mock mode; in
+ * production-non-mock a missing secret REJECTS (requireProductionSecret throws,
+ * which the caller maps to 401). With the key set, the HMAC-SHA512 of the raw
+ * body must match `x-paystack-signature` (constant-time compare).
  */
 function verifySignature(rawBody: string, signature: string | null): boolean {
-  const secret = process.env.PAYSTACK_SECRET_KEY?.trim();
-  if (!secret) return true; // mock/dev stub — real verification once keyed
+  const secret = requireProductionSecret("PAYSTACK_SECRET_KEY");
+  if (!secret) return true; // dev/mock only — throws in production-non-mock
   if (!signature) return false;
   const expected = createHmac("sha512", secret).update(rawBody).digest("hex");
-  const a = Buffer.from(expected);
-  const b = Buffer.from(signature);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return constantTimeEqualHex(expected, signature);
 }
 
 interface PaystackEvent {
@@ -68,7 +79,21 @@ export async function POST(request: Request) {
   const rawBody = await request.text();
   const signature = request.headers.get("x-paystack-signature");
 
-  if (!verifySignature(rawBody, signature)) {
+  let signatureOk: boolean;
+  try {
+    signatureOk = verifySignature(rawBody, signature);
+  } catch (error) {
+    // FAIL CLOSED: missing secret in production-non-mock → reject, never accept.
+    if (error instanceof MissingProductionSecretError) {
+      logger.info("paystack.webhook.no_secret_in_prod", {});
+      return NextResponse.json(
+        { ok: false, error: "not_configured" },
+        { status: 401 },
+      );
+    }
+    throw error;
+  }
+  if (!signatureOk) {
     return NextResponse.json(
       { ok: false, error: "bad_signature" },
       { status: 401 },
@@ -82,7 +107,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "invalid_json" }, { status: 400 });
   }
 
-  const eventId = String(event.id ?? `${event.event}:${rawBody.length}`);
+  // B13: dedup id. Prefer Paystack's own event id; otherwise bind to a SHA-256
+  // of the raw body so two distinct same-length events never collide (the old
+  // `${event}:${rawBody.length}` fallback did).
+  const eventId = String(
+    event.id ??
+      `${event.event ?? "?"}:${createHash("sha256")
+        .update(rawBody)
+        .digest("hex")}`,
+  );
   if (seenEvents.has(eventId)) {
     // Idempotent: a redelivered event is acknowledged without re-applying.
     return NextResponse.json({ ok: true, deduped: true });
@@ -93,14 +126,53 @@ export async function POST(request: Request) {
     const data = event.data ?? {};
     const subCode = data.subscription_code ?? null;
 
-    // Resolve the owning tenant: prefer our metadata, else look up by provider id.
-    let tenantId = data.metadata?.tenantId ?? null;
-    if (!tenantId && subCode) {
-      const existing = await repos.subscriptions.getByProviderId(PROVIDER, subCode);
-      tenantId = existing?.tenantId ?? null;
+    // S1 — OWNERSHIP CHECK. `data.metadata.tenantId` is attacker-controllable
+    // body content, so it is NEVER trusted on its own. The owning tenant is the
+    // one that ALREADY owns this subscription_code in our store. We only fall
+    // back to metadata for the very first event of a brand-new subscription
+    // (subscription.create / charge.success) when no row exists yet AND the
+    // metadata names a real tenant; even then, if a row exists, the stored owner
+    // wins and a mismatching metadata tenant is rejected (no self-upgrade of
+    // another tenant by forging metadata).
+    const metaTenantId = data.metadata?.tenantId ?? null;
+    let tenantId: string | null = null;
+
+    if (subCode) {
+      const existing = await repos.subscriptions.getByProviderId(
+        PROVIDER,
+        subCode,
+      );
+      if (existing) {
+        // A subscription with this code is already bound to a tenant — that is
+        // the authoritative owner. Reject a body that claims a different one.
+        if (metaTenantId && metaTenantId !== existing.tenantId) {
+          logger.info("paystack.webhook.tenant_mismatch", {
+            event: event.event,
+          });
+          return NextResponse.json(
+            { ok: false, error: "tenant_mismatch" },
+            { status: 403 },
+          );
+        }
+        tenantId = existing.tenantId;
+      } else {
+        // First event for a not-yet-stored subscription: bind to the metadata
+        // tenant only if it resolves to an existing tenant we own.
+        if (metaTenantId) {
+          const sub = await repos.subscriptions.get(metaTenantId);
+          if (sub) tenantId = metaTenantId;
+        }
+      }
+    } else if (metaTenantId) {
+      // No subscription_code at all (e.g. a one-off charge): only honour the
+      // metadata tenant when it maps to a real tenant in our store.
+      const sub = await repos.subscriptions.get(metaTenantId);
+      if (sub) tenantId = metaTenantId;
     }
+
     if (!tenantId) {
-      // Unknown subscription — acknowledge so Paystack stops retrying, but log.
+      // Unknown / unverifiable subscription — acknowledge so Paystack stops
+      // retrying, but apply NOTHING and log.
       logger.info("paystack.webhook.unresolved", { event: event.event });
       seenEvents.add(eventId);
       return NextResponse.json({ ok: true, unresolved: true });

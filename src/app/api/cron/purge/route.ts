@@ -11,24 +11,53 @@
 //
 // Runs in mock mode (in-memory repo) and DB mode unchanged.
 
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getRepositories } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { captureError } from "@/lib/observability";
+import { MissingProductionSecretError, requireProductionSecret } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
+/** Constant-time bearer-token compare (no early-exit timing leak). */
+function bearerMatches(header: string, secret: string): boolean {
+  const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const a = Buffer.from(provided);
+  const b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Authorize the purge Cron (B3/S2). FAIL CLOSED: when CRON_SECRET is unset, the
+ * route is open ONLY in explicit dev/mock mode; in production-non-mock a missing
+ * secret REJECTS (requireProductionSecret throws → caller returns 401). With a
+ * secret set, the Bearer token must match in constant time.
+ */
 function authorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  // No secret configured (mock/dev): allow, so the Cron is exercisable locally.
-  if (!secret) return true;
+  const secret = requireProductionSecret("CRON_SECRET");
+  if (!secret) return true; // dev/mock only — throws in production-non-mock
   const header = request.headers.get("authorization") ?? "";
-  return header === `Bearer ${secret}`;
+  return bearerMatches(header, secret);
 }
 
 async function runPurge(request: Request) {
-  if (!authorized(request)) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  try {
+    if (!authorized(request)) {
+      return NextResponse.json(
+        { ok: false, error: "unauthorized" },
+        { status: 401 },
+      );
+    }
+  } catch (error) {
+    if (error instanceof MissingProductionSecretError) {
+      logger.info("popia.purge.no_secret_in_prod", {});
+      return NextResponse.json(
+        { ok: false, error: "not_configured" },
+        { status: 401 },
+      );
+    }
+    throw error;
   }
 
   try {

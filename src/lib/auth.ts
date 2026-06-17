@@ -18,32 +18,55 @@ import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { env, hasDatabase } from "@/lib/env";
+import { env, isDevMockMode } from "@/lib/env";
 import { prisma } from "@/lib/db/prisma/client";
 import { DEV_USER_EMAIL, DEV_USER_ID } from "@/lib/db/seed";
 
 // A stable dev secret so mock mode needs no AUTH_SECRET. Real deployments MUST
-// set AUTH_SECRET; this fallback is only ever used when there is no database.
+// set AUTH_SECRET; this fallback is ONLY ever used in explicit dev/mock mode.
 const DEV_SECRET = "launch-desk-dev-secret-not-for-production";
 
+// B4/S3: the dev/passwordless auth path is selected ONLY in explicit dev/mock
+// mode (LAUNCH_DESK_MOCK=1 or NODE_ENV!=="production") — NEVER inferred from
+// `hasDatabase()`. A malformed/absent DATABASE_URL in production therefore can
+// NOT flip the app to passwordless login; instead the real (magic-link) config
+// is used and a missing AUTH_SECRET makes Auth.js refuse to operate.
+function shouldUseMockAuth(): boolean {
+  return isDevMockMode();
+}
+
 function buildConfig(): NextAuthConfig {
-  if (hasDatabase()) {
-    // --- Production / Postgres: magic-link + DB sessions ---------------------
+  if (!shouldUseMockAuth()) {
+    // --- Production: magic-link + DB sessions --------------------------------
+    // B6/S4: AUTH_SECRET MUST be present in production. We pass env.authSecret
+    // verbatim (no dev fallback): Auth.js itself fails closed when it is unset,
+    // so an unset secret yields no working sessions rather than a forged one.
+    //
+    // The Nodemailer provider is only constructed when EMAIL_SERVER is set.
+    // `next build` runs with NODE_ENV=production and NO env, and Nodemailer
+    // THROWS at construction without a `server` — building it unconditionally
+    // would break the build at page-data collection (import time). Omitting it
+    // when unconfigured keeps the build green AND is still FAIL-CLOSED at
+    // runtime: with no email provider there is simply no way to sign in (the
+    // dev/passwordless path is never reachable in production).
+    const providers = process.env.EMAIL_SERVER
+      ? [
+          Nodemailer({
+            server: process.env.EMAIL_SERVER,
+            from: process.env.EMAIL_FROM ?? "no-reply@launchdesk.co.za",
+          }),
+        ]
+      : [];
     return {
       adapter: PrismaAdapter(prisma),
       secret: env.authSecret,
       session: { strategy: "database" },
-      providers: [
-        Nodemailer({
-          server: process.env.EMAIL_SERVER,
-          from: process.env.EMAIL_FROM ?? "no-reply@launchdesk.co.za",
-        }),
-      ],
+      providers,
       pages: { signIn: "/sign-in" },
     };
   }
 
-  // --- Mock mode: dev credentials, JWT session, no email/DB ------------------
+  // --- Mock/dev mode: dev credentials, JWT session, no email/DB --------------
   return {
     secret: env.authSecret ?? DEV_SECRET,
     session: { strategy: "jwt" },

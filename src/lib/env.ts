@@ -71,12 +71,72 @@ export const env = {
  */
 const DEV_APPROVAL_SECRET = "launch-desk-dev-approval-secret-not-for-production";
 export function approvalSecret(): string {
-  return env.approvalSecret ?? DEV_APPROVAL_SECRET;
+  // B6/S4: in production-non-mock the approval HMAC secret MUST be present —
+  // the hardcoded dev fallback is public (open-source repo), so relying on it
+  // in production would let anyone mint approval tokens. Runtime check (first
+  // token sign/verify), never import-time, so `next build` is unaffected.
+  if (env.approvalSecret) return env.approvalSecret;
+  if (isDevMockMode()) return DEV_APPROVAL_SECRET;
+  throw new MissingProductionSecretError("LAUNCH_DESK_APPROVAL_SECRET");
 }
 
 /** True when we are running entirely on mocks (the M0 default). */
 export function isMockMode(): boolean {
   return env.adapterMode === "mock";
+}
+
+/**
+ * True when the app is running in an explicit MOCK/dev context where missing
+ * secrets are tolerated and dev fallbacks apply.
+ *
+ * Mock mode is EITHER:
+ *   * `LAUNCH_DESK_MOCK=1` (explicit opt-in, works even in production), OR
+ *   * `NODE_ENV !== "production"` (dev/test).
+ *
+ * It is deliberately NOT inferred from `hasDatabase()` — a malformed
+ * DATABASE_URL must never silently re-enable dev/passwordless behaviour
+ * (B4/S3). `next build` runs with NODE_ENV=production and no secrets, so this
+ * is only ever consulted at RUNTIME inside request handlers / first use, never
+ * at import time (so the build never trips a fail-closed check).
+ */
+export function isDevMockMode(): boolean {
+  if (process.env.LAUNCH_DESK_MOCK === "1") return true;
+  return process.env.NODE_ENV !== "production";
+}
+
+/**
+ * Fail-closed secret resolver for privileged endpoints (B3/S1/S2/B6/S4).
+ *
+ * Reads `name` (optionally falling back through `fallbacks`). In production
+ * WITHOUT an explicit mock opt-in, a missing value is a hard error — callers
+ * MUST treat that as "reject the request" (never "accept"). In mock/dev mode a
+ * missing value returns `undefined` so the dev-friendly behaviour is preserved.
+ *
+ * MUST be called at runtime (request handling), never at module top level, so
+ * `next build` (production, no secrets) does not throw at import time.
+ */
+export class MissingProductionSecretError extends Error {
+  readonly code = "missing_production_secret";
+  constructor(name: string) {
+    super(
+      `Required secret "${name}" is not set. Refusing to run in production ` +
+        `without it (set LAUNCH_DESK_MOCK=1 to allow dev/mock behaviour).`,
+    );
+    this.name = "MissingProductionSecretError";
+  }
+}
+
+export function requireProductionSecret(
+  name: string,
+  ...fallbacks: string[]
+): string | undefined {
+  for (const key of [name, ...fallbacks]) {
+    const value = process.env[key]?.trim();
+    if (value) return value;
+  }
+  // No secret found.
+  if (isDevMockMode()) return undefined; // dev/mock: tolerate, caller stays open
+  throw new MissingProductionSecretError(name); // production: caller must reject
 }
 
 /**

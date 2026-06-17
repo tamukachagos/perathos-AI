@@ -17,19 +17,35 @@
 //
 // Runs in mock mode (in-memory repo) and DB mode unchanged.
 
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getRepositories } from "@/lib/db";
 import { logger } from "@/lib/logger";
 import { captureError } from "@/lib/observability";
+import { MissingProductionSecretError, requireProductionSecret } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
+/** Constant-time bearer-token compare (no early-exit timing leak). */
+function bearerMatches(header: string, secret: string): boolean {
+  const provided = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const a = Buffer.from(provided);
+  const b = Buffer.from(secret);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/**
+ * Authorize a DSAR request (B3/S2). FAIL CLOSED: when neither DSAR_SECRET nor
+ * CRON_SECRET is set, the route is open ONLY in explicit dev/mock mode; in
+ * production-non-mock a missing secret REJECTS (throws → caller returns 401).
+ * This is a destructive, platform-wide PII endpoint, so it must never be open
+ * in production. The bearer compare is constant-time.
+ */
 function authorized(request: Request): boolean {
-  const secret =
-    process.env.DSAR_SECRET?.trim() || process.env.CRON_SECRET?.trim();
-  if (!secret) return true; // mock/dev: exercisable with no secrets
+  const secret = requireProductionSecret("DSAR_SECRET", "CRON_SECRET");
+  if (!secret) return true; // dev/mock only — throws in production-non-mock
   const header = request.headers.get("authorization") ?? "";
-  return header === `Bearer ${secret}`;
+  return bearerMatches(header, secret);
 }
 
 interface Body {
@@ -38,8 +54,22 @@ interface Body {
 }
 
 export async function POST(request: Request) {
-  if (!authorized(request)) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  try {
+    if (!authorized(request)) {
+      return NextResponse.json(
+        { ok: false, error: "unauthorized" },
+        { status: 401 },
+      );
+    }
+  } catch (error) {
+    if (error instanceof MissingProductionSecretError) {
+      logger.info("dsar.no_secret_in_prod", {});
+      return NextResponse.json(
+        { ok: false, error: "not_configured" },
+        { status: 401 },
+      );
+    }
+    throw error;
   }
 
   let body: Body;

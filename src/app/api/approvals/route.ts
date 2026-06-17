@@ -19,7 +19,7 @@ import {
 } from "@/integrations/core/actionRouter";
 import {
   DEFAULT_TOKEN_TTL_MS,
-  hashPayload,
+  digestPayload,
   issueToken,
   mintNonce,
 } from "@/integrations/core/approvalToken";
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
   }
 
   const payload = asRecord(body.payload);
-  const payloadHash = hashPayload(payload);
+  const payloadHash = digestPayload(payload);
   const nonce = mintNonce();
   const expiresAt = Date.now() + DEFAULT_TOKEN_TTL_MS;
   const token = issueToken({ verb, payloadHash, idempotencyKey, nonce, expiresAt });

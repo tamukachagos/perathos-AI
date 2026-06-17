@@ -9,7 +9,7 @@
 //
 // Runs in mock mode (in-memory repo) and DB mode unchanged.
 
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { getRepositories } from "@/lib/db";
 import { sanitizeText } from "@/lib/sanitize";
 import { PROCESSING_PURPOSE, retentionUntil } from "@/lib/popia";
@@ -18,9 +18,9 @@ import { logger } from "@/lib/logger";
 export const dynamic = "force-dynamic";
 
 // --- Basic in-memory rate limiting (per-process, best-effort) ----------------
-// A real deployment uses a shared store (e.g. Upstash) behind the same shape;
-// this keeps the endpoint from being trivially flooded in mock/single-instance
-// mode and is intentionally simple (no external dependency).
+// W1 will back this with a shared store (e.g. Upstash) behind the same shape;
+// in-memory is acceptable for Phase 0. This keeps the endpoint from being
+// trivially flooded in mock/single-instance mode (no external dependency).
 const RATE_LIMIT = 5; // requests
 const RATE_WINDOW_MS = 60_000; // per minute, per client key
 const globalForRate = globalThis as unknown as {
@@ -39,9 +39,21 @@ function rateLimited(key: string): boolean {
   return entry.count > RATE_LIMIT;
 }
 
-function clientKey(request: Request): string {
-  const fwd = request.headers.get("x-forwarded-for");
-  return (fwd?.split(",")[0] ?? "anon").trim() || "anon";
+/**
+ * Resolve the client IP for rate limiting (B15). We use the PLATFORM-provided
+ * client IP — Vercel sets `x-vercel-forwarded-for` / `x-real-ip` from the real
+ * TCP connection, which a client cannot spoof. We deliberately do NOT key off
+ * the raw, client-supplied `x-forwarded-for`, which an attacker can rotate per
+ * request to bypass the cap. (`NextRequest.ip` was removed in Next 15, so the
+ * platform header is the supported source.) Combined with the slug below, the
+ * key is `${ip}:${slug}` so the limit is per-IP AND per-target-site.
+ */
+function clientIp(request: NextRequest): string {
+  const platformIp =
+    request.headers.get("x-vercel-forwarded-for")?.trim() ||
+    request.headers.get("x-real-ip")?.trim();
+  if (platformIp) return platformIp.split(",")[0].trim();
+  return "anon";
 }
 
 // --- Input validation --------------------------------------------------------
@@ -59,14 +71,7 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-export async function POST(request: Request) {
-  if (rateLimited(clientKey(request))) {
-    return NextResponse.json(
-      { ok: false, error: "rate_limited" },
-      { status: 429 },
-    );
-  }
-
+export async function POST(request: NextRequest) {
   let body: LeadBody;
   try {
     body = (await request.json()) as LeadBody;
@@ -74,6 +79,18 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { ok: false, error: "invalid_json" },
       { status: 400 },
+    );
+  }
+
+  const slug = asString(body.slug).trim();
+
+  // Rate limit keyed by platform client IP AND target slug (B15) — done after
+  // we know the slug so an attacker cannot exhaust a single global bucket, and
+  // cannot rotate a spoofed X-Forwarded-For to bypass the cap.
+  if (rateLimited(`${clientIp(request)}:${slug || "anon"}`)) {
+    return NextResponse.json(
+      { ok: false, error: "rate_limited" },
+      { status: 429 },
     );
   }
 
@@ -85,7 +102,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const slug = asString(body.slug).trim();
   // Sanitize free-text before it is stored (defence in depth; leads may later be
   // shown in the dashboard).
   const name = sanitizeText(asString(body.name)).slice(0, 200);

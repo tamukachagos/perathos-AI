@@ -87,3 +87,18 @@ export function buildBusinessSchema(site: PublishedSite): BusinessSchema {
   }
   return schema;
 }
+
+/**
+ * Serialise a JSON-LD schema for SAFE injection via dangerouslySetInnerHTML (S8).
+ *
+ * `JSON.stringify` does NOT escape `<` or `/`, so a `</script>` sequence in any
+ * field would close the surrounding <script> tag and let arbitrary markup run.
+ * We escape `<` → < and the `/` in `</` → / (both valid JSON-string
+ * escapes that parse back to the identical value), so structured data can never
+ * break out of the script tag. Kept here as a pure, unit-testable function.
+ */
+export function renderJsonLd(schema: unknown): string {
+  return JSON.stringify(schema)
+    .replace(/</g, "\\u003c")
+    .replace(/\//g, "\\u002f");
+}

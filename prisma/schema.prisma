@@ -181,7 +181,10 @@ model GeneratedSite {
   id               String     @id @default(cuid())
   tenantId         String
   businessId       String
-  slug             String     @unique
+  // S7: slug uniqueness is PER TENANT (not global) so tenants cannot squat each
+  // other's business-name slug. Public host→slug resolution still finds one
+  // published site per slug.
+  slug             String
   status           SiteStatus @default(draft)
   currentVersionId String?    @unique
   publishedAt      DateTime?
@@ -193,8 +196,10 @@ model GeneratedSite {
   versions       SiteVersion[] @relation("SiteVersions")
   currentVersion SiteVersion?  @relation("CurrentVersion", fields: [currentVersionId], references: [id], onDelete: SetNull)
 
+  @@unique([tenantId, slug])
   @@index([tenantId])
   @@index([businessId])
+  @@index([slug])
   @@map("generated_sites")
 }
 
