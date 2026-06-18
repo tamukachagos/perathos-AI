@@ -8,15 +8,26 @@
 
 import type { GeneratedProfile } from "./generateProfile";
 import { generateBusinessProfile } from "./generateProfile";
-import { generateBusinessProfileWithClaude } from "./claudeProfile";
+import {
+  generateBusinessProfileWithClaude,
+  type AgentMeterContext,
+} from "./claudeProfile";
 
 /** The provider name an impl reports (useful for logging/telemetry, never PII). */
 export interface AgentProvider {
   readonly name: string;
   /** True when this impl makes a real AI call (false for the mock heuristic). */
   readonly real: boolean;
-  /** Turn free text into a structured (partial) Business profile for review. */
-  generateProfile(description: string): Promise<GeneratedProfile>;
+  /**
+   * Turn free text into a structured (partial) Business profile for review.
+   * W3: an OPTIONAL metering context routes the real call through the LLM
+   * router's tenant wallet (pre-flight credit gate + per-tier metered debit).
+   * Absent (the anonymous pre-sign-in wizard route) → routed but NOT metered.
+   */
+  generateProfile(
+    description: string,
+    ctx?: AgentMeterContext,
+  ): Promise<GeneratedProfile>;
 }
 
 /** Mock AgentProvider: the deterministic heuristic, no secrets, runs anywhere. */
@@ -24,11 +35,13 @@ export function mockAgentProvider(): AgentProvider {
   return {
     name: "mock",
     real: false,
-    generateProfile: generateBusinessProfile,
+    // The mock ignores the metering context (no real model call to meter).
+    generateProfile: (description: string) =>
+      generateBusinessProfile(description),
   };
 }
 
-/** Real AgentProvider: the Anthropic Messages API, with mock fallback on error. */
+/** Real AgentProvider: routes through the LLM router, with mock fallback on error. */
 export function claudeAgentProvider(): AgentProvider {
   return {
     name: "claude",
@@ -39,9 +52,12 @@ export function claudeAgentProvider(): AgentProvider {
 
 /**
  * Select the active AgentProvider. MOCK by default; returns the real Claude
- * provider only when ANTHROPIC_API_KEY is set. Mirrors selectBillingProvider().
+ * provider only when ANTHROPIC_API_KEY OR OPENROUTER_API_KEY is set (the LLM
+ * router selects the concrete backend). Mirrors selectBillingProvider().
  */
 export function selectAgentProvider(): AgentProvider {
-  const hasAnthropic = Boolean(process.env.ANTHROPIC_API_KEY?.trim());
-  return hasAnthropic ? claudeAgentProvider() : mockAgentProvider();
+  const hasLlmKey =
+    Boolean(process.env.ANTHROPIC_API_KEY?.trim()) ||
+    Boolean(process.env.OPENROUTER_API_KEY?.trim());
+  return hasLlmKey ? claudeAgentProvider() : mockAgentProvider();
 }

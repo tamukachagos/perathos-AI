@@ -25,8 +25,9 @@ export const agentAdapter: ProviderAdapter = {
     if (request.verb === "agent.generateProfile") {
       // The wizard reads the structured profile via /api/agent/profile directly;
       // this verb is the adapter-plane mirror so the AgentProvider has a real
-      // action. Both route through selectAgentProvider() — mock by default, real
-      // Claude once ANTHROPIC_API_KEY is set.
+      // action. Both route through selectAgentProvider() — mock by default, and
+      // the real provider (W3: via the LLM router) once an LLM key is set
+      // (OPENROUTER_API_KEY or ANTHROPIC_API_KEY).
       const description = String(request.payload?.description ?? "");
       const { profile } = await selectAgentProvider().generateProfile(description);
       return {
