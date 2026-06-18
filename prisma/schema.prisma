@@ -233,10 +233,13 @@ model SiteVersion {
 // M2/M4). Registration is async; `status` tracks the lifecycle.
 // ---------------------------------------------------------------------------
 
+// W4: transfer_pending + expiring added to the lifecycle (multi-domain).
 enum DomainStatus {
   requested
   pending_registration
+  transfer_pending
   active
+  expiring
   failed
   released
 }
@@ -247,6 +250,25 @@ model Domain {
   businessId String?
   hostname   String       @unique
   status     DomainStatus @default(requested)
+
+  // W4 multi-domain (registrar-agnostic) fields. The model is otherwise
+  // TLD-neutral; these carry the registrar routing + lifecycle + pricing state.
+  // `tld` is the matched public suffix (e.g. "co.za", "com"); `registrar` is the
+  // backend kind ("za" | "gtld"). `registrarRef` is the backend-side id.
+  tld          String?
+  registrar    String?
+  registrarRef String?
+  autoRenew    Boolean   @default(false)
+  expiresAt    DateTime?
+  // EPP / transfer auth-info code, stored ENCRYPTED (AES-256-GCM) — never plain,
+  // never logged. See src/integrations/domain/fieldCrypto.ts.
+  authCode     String?
+  // Resale economics snapshot at request time, ZAR cents (integer).
+  costCents    Int?
+  priceCents   Int?
+  // The async W1 operation that registers/transfers/renews this domain.
+  operationId  String?
+
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 

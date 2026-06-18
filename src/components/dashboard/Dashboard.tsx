@@ -31,6 +31,7 @@ import { LaunchChecklist } from "./LaunchChecklist";
 import { AgentOps, AnalyticsPanel, ArchitecturePanel } from "./LowerPanels";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { ApprovalDialog } from "./ApprovalDialog";
+import { DomainStep } from "./DomainStep";
 
 // Maps a gated checklist row to the ActionRouter verb + the payload the approval
 // binds to. Only authenticated sessions can approve (the flow needs a tenant).
@@ -400,6 +401,13 @@ export function Dashboard({
             onApprove={openApproval}
           />
         </section>
+
+        <DomainStep
+          business={business}
+          authenticated={authenticated}
+          canRegister={Boolean(entitlements.customDomain)}
+          onNotice={setNotice}
+        />
 
         <section className="lower-grid">
           <AnalyticsPanel />

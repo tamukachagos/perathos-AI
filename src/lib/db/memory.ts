@@ -12,6 +12,9 @@ import type {
   AuditInput,
   BusinessRecord,
   DebitResult,
+  DomainInput,
+  DomainRecord,
+  DomainUpdate,
   InvoiceRecord,
   InvoiceStatus,
   LeadInput,
@@ -38,6 +41,7 @@ interface Store {
   siteVersions: SiteVersionRecord[]; // append-only history across all sites
   leads: LeadRecord[];
   audit: AuditEntry[];
+  domains: DomainRecord[]; // append-only across all tenants (W4)
   adapterConnections: Map<string, AdapterConnectionRecord>; // key `${tenantId}:${interfaceName}`
   subscriptions: Map<string, SubscriptionRecord>; // keyed by tenantId
   wallets: Map<string, WalletRecord>; // keyed by tenantId
@@ -69,6 +73,7 @@ function createStore(): Store {
     ],
     leads: [],
     audit: [],
+    domains: [],
     adapterConnections: new Map(),
     // The seeded dev tenant starts on Free (no row) — exactly the default tier.
     subscriptions: new Map(),
@@ -314,6 +319,68 @@ const audit = {
   },
 };
 
+const domains = {
+  async list(tenantId: string): Promise<DomainRecord[]> {
+    return store()
+      .domains.filter((d) => d.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((d) => ({ ...d }));
+  },
+  async getByHostname(
+    tenantId: string,
+    hostname: string,
+  ): Promise<DomainRecord | null> {
+    const key = hostname.trim().toLowerCase();
+    const found = store().domains.find(
+      (d) => d.tenantId === tenantId && d.hostname === key,
+    );
+    return found ? { ...found } : null;
+  },
+  async create(tenantId: string, input: DomainInput): Promise<DomainRecord> {
+    const now = new Date().toISOString();
+    const record: DomainRecord = {
+      id: nextId("dom"),
+      tenantId,
+      businessId: input.businessId ?? null,
+      hostname: input.hostname.trim().toLowerCase(),
+      status: input.status ?? "requested",
+      tld: input.tld ?? null,
+      registrar: input.registrar ?? null,
+      registrarRef: input.registrarRef ?? null,
+      autoRenew: input.autoRenew ?? false,
+      expiresAt: input.expiresAt ?? null,
+      authCode: input.authCode ?? null,
+      costCents: input.costCents ?? null,
+      priceCents: input.priceCents ?? null,
+      operationId: input.operationId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().domains.push(record);
+    return { ...record };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: DomainUpdate,
+  ): Promise<DomainRecord> {
+    const existing = store().domains.find(
+      (d) => d.id === id && d.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`Domain ${id} not found for tenant`);
+    if (update.status !== undefined) existing.status = update.status;
+    if (update.registrarRef !== undefined)
+      existing.registrarRef = update.registrarRef;
+    if (update.autoRenew !== undefined) existing.autoRenew = update.autoRenew;
+    if (update.expiresAt !== undefined) existing.expiresAt = update.expiresAt;
+    if (update.authCode !== undefined) existing.authCode = update.authCode;
+    if (update.operationId !== undefined)
+      existing.operationId = update.operationId;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing };
+  },
+};
+
 const adapterConnections = {
   async list(tenantId: string): Promise<AdapterConnectionRecord[]> {
     return [...store().adapterConnections.values()].filter(
@@ -535,6 +602,7 @@ export const memoryRepositories: Repositories = {
   sites,
   leads,
   audit,
+  domains,
   adapterConnections,
   subscriptions,
   wallet,

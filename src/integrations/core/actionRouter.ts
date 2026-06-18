@@ -71,7 +71,29 @@ export const GATED_VERBS: Record<string, GatedVerbSpec> = {
     interfaceName: "DomainProvider",
     async: true,
     label: "Register domain",
-    target: (p) => String(p.domain ?? ""),
+    target: (p) => String(p.domain ?? p.hostname ?? ""),
+    requiresEntitlement: "customDomain",
+  },
+  "domain.transfer": {
+    // W4 — transfer in a domain via the registrar's auth-info / auth code. Gated
+    // + async (ZACR settles in minutes; gTLD is the slow 5-day-ACK path). NOT
+    // metered as a per-action charge in W4 (a transfer carries the existing
+    // registration; renewal is where the cost lands), so its estimate is 0.
+    interfaceName: "DomainProvider",
+    async: true,
+    label: "Transfer domain",
+    target: (p) => String(p.domain ?? p.hostname ?? ""),
+    requiresEntitlement: "customDomain",
+    estimateMicro: () => 0n,
+  },
+  "domain.renew": {
+    // W4 — renew a domain (auto-renew aware). Gated + async + METERED at the
+    // domain markup. The pre-flight credit estimate comes from the config map
+    // (estimateVerbCostMicro), like domain.register.
+    interfaceName: "DomainProvider",
+    async: true,
+    label: "Renew domain",
+    target: (p) => String(p.domain ?? p.hostname ?? ""),
     requiresEntitlement: "customDomain",
   },
   "dns.write": {

@@ -13,6 +13,9 @@ import type {
   AuditInput,
   BusinessRecord,
   DebitResult,
+  DomainInput,
+  DomainRecord,
+  DomainUpdate,
   InvoiceRecord,
   InvoiceStatus,
   LeadInput,
@@ -450,6 +453,114 @@ const audit = {
   },
 };
 
+interface DomainRow {
+  id: string;
+  tenantId: string;
+  businessId: string | null;
+  hostname: string;
+  status: string;
+  tld: string | null;
+  registrar: string | null;
+  registrarRef: string | null;
+  autoRenew: boolean;
+  expiresAt: Date | null;
+  authCode: string | null;
+  costCents: number | null;
+  priceCents: number | null;
+  operationId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toDomainRecord(row: DomainRow): DomainRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    businessId: row.businessId,
+    hostname: row.hostname,
+    status: row.status as DomainRecord["status"],
+    tld: row.tld,
+    registrar: (row.registrar as DomainRecord["registrar"]) ?? null,
+    registrarRef: row.registrarRef,
+    autoRenew: row.autoRenew,
+    expiresAt: row.expiresAt?.toISOString() ?? null,
+    authCode: row.authCode,
+    costCents: row.costCents,
+    priceCents: row.priceCents,
+    operationId: row.operationId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const domains = {
+  async list(tenantId: string): Promise<DomainRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.domain.findMany({ where: { tenantId }, orderBy: { createdAt: "desc" } }),
+    );
+    return rows.map((r) => toDomainRecord(r as DomainRow));
+  },
+  async getByHostname(
+    tenantId: string,
+    hostname: string,
+  ): Promise<DomainRecord | null> {
+    const key = hostname.trim().toLowerCase();
+    const row = await withTenant(tenantId, (tx) =>
+      tx.domain.findFirst({ where: { tenantId, hostname: key } }),
+    );
+    return row ? toDomainRecord(row as DomainRow) : null;
+  },
+  async create(tenantId: string, input: DomainInput): Promise<DomainRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.domain.create({
+        data: {
+          tenantId,
+          businessId: input.businessId ?? null,
+          hostname: input.hostname.trim().toLowerCase(),
+          status: input.status ?? "requested",
+          tld: input.tld ?? null,
+          registrar: input.registrar ?? null,
+          registrarRef: input.registrarRef ?? null,
+          autoRenew: input.autoRenew ?? false,
+          expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+          authCode: input.authCode ?? null,
+          costCents: input.costCents ?? null,
+          priceCents: input.priceCents ?? null,
+          operationId: input.operationId ?? null,
+        },
+      }),
+    );
+    return toDomainRecord(row as DomainRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: DomainUpdate,
+  ): Promise<DomainRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.domain.findFirst({ where: { id, tenantId } });
+      if (!existing) throw new Error(`Domain ${id} not found for tenant`);
+      return tx.domain.update({
+        where: { id },
+        data: {
+          status: update.status,
+          registrarRef: update.registrarRef,
+          autoRenew: update.autoRenew,
+          expiresAt:
+            update.expiresAt === undefined
+              ? undefined
+              : update.expiresAt
+                ? new Date(update.expiresAt)
+                : null,
+          authCode: update.authCode,
+          operationId: update.operationId,
+        },
+      });
+    });
+    return toDomainRecord(row as DomainRow);
+  },
+};
+
 interface AdapterConnRow {
   id: string;
   tenantId: string;
@@ -831,6 +942,7 @@ export const prismaRepositories: Repositories = {
   sites,
   leads,
   audit,
+  domains,
   adapterConnections,
   subscriptions,
   wallet,

@@ -70,6 +70,73 @@ export interface AuditEntry {
   createdAt: string;
 }
 
+// --- W4 multi-domain ---------------------------------------------------------
+
+/** The domain lifecycle, mirroring the Prisma DomainStatus enum. */
+export type DomainStatus =
+  | "requested"
+  | "pending_registration"
+  | "transfer_pending"
+  | "active"
+  | "expiring"
+  | "failed"
+  | "released";
+
+/** The registrar backend kind a domain routes to (TLD-derived, server-side). */
+export type DomainRegistrar = "za" | "gtld";
+
+/**
+ * A tenant-owned domain (registrar-agnostic). `authCode` is stored ENCRYPTED
+ * (AES-256-GCM ciphertext string) — never plaintext, never logged. The repo
+ * never decrypts; only the server action plane does, at transfer dispatch.
+ */
+export interface DomainRecord {
+  id: string;
+  tenantId: string;
+  businessId: string | null;
+  hostname: string;
+  status: DomainStatus;
+  tld: string | null;
+  registrar: DomainRegistrar | null;
+  registrarRef: string | null;
+  autoRenew: boolean;
+  expiresAt: string | null;
+  /** ENCRYPTED auth-code ciphertext (or null). NEVER plaintext. */
+  authCode: string | null;
+  costCents: number | null;
+  priceCents: number | null;
+  operationId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fields settable when creating a domain at request time. */
+export interface DomainInput {
+  businessId?: string | null;
+  hostname: string;
+  status?: DomainStatus;
+  tld?: string | null;
+  registrar?: DomainRegistrar | null;
+  registrarRef?: string | null;
+  autoRenew?: boolean;
+  expiresAt?: string | null;
+  /** Pass the ALREADY-ENCRYPTED ciphertext (the action plane encrypts first). */
+  authCode?: string | null;
+  costCents?: number | null;
+  priceCents?: number | null;
+  operationId?: string | null;
+}
+
+/** Fields settable when updating a domain (e.g. status on settlement). */
+export interface DomainUpdate {
+  status?: DomainStatus;
+  registrarRef?: string | null;
+  autoRenew?: boolean;
+  expiresAt?: string | null;
+  authCode?: string | null;
+  operationId?: string | null;
+}
+
 export type AdapterConnMode = "mock" | "sandbox" | "live";
 export type AdapterConnStatus = "ready" | "review" | "pending";
 
@@ -290,6 +357,21 @@ export interface AuditRepository {
   list(tenantId: string): Promise<AuditEntry[]>;
 }
 
+export interface DomainRepository {
+  /** All domains owned by a tenant (newest first). */
+  list(tenantId: string): Promise<DomainRecord[]>;
+  /** Read a domain by hostname, tenant-scoped (null if not this tenant's). */
+  getByHostname(tenantId: string, hostname: string): Promise<DomainRecord | null>;
+  /** Create a tenant-owned domain at request time (bound to tenantId here). */
+  create(tenantId: string, input: DomainInput): Promise<DomainRecord>;
+  /** Update mutable fields (status/expiry/ref) on settlement, tenant-scoped. */
+  update(
+    tenantId: string,
+    id: string,
+    update: DomainUpdate,
+  ): Promise<DomainRecord>;
+}
+
 export interface AdapterConnectionRepository {
   list(tenantId: string): Promise<AdapterConnectionRecord[]>;
   upsert(
@@ -371,6 +453,7 @@ export interface Repositories {
   sites: SiteRepository;
   leads: LeadRepository;
   audit: AuditRepository;
+  domains: DomainRepository;
   adapterConnections: AdapterConnectionRepository;
   subscriptions: SubscriptionRepository;
   wallet: WalletRepository;
