@@ -9,6 +9,10 @@
     {
       "path": "/api/cron/operations",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/hosting-meter",
+      "schedule": "0 * * * *"
     }
   ]
 }

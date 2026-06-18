@@ -20,6 +20,7 @@ import type { AuditRepository, Repositories } from "@/lib/db/types";
 import type { FeatureKey } from "@/lib/billing/entitlements";
 import { checkEntitlement } from "@/lib/billing/entitlements";
 import { estimateVerbCostMicro } from "@/lib/billing/meteringConfig";
+import { planEstimateMicro, resolvePlacement } from "@/integrations/hosting/catalog";
 import { getAdapter } from "./registry";
 import type { ProviderInterface } from "./types";
 import {
@@ -119,6 +120,45 @@ export const GATED_VERBS: Record<string, GatedVerbSpec> = {
     async: true,
     label: "Deploy site",
     target: (p) => String(p.slug ?? ""),
+    estimateMicro: () => 0n,
+  },
+  "hosting.provision": {
+    // W5 — provision managed (container/K8s) hosting. Gated + ASYNC under the
+    // `managedHosting` entitlement. The wallet pre-flight estimate is the
+    // resolved plan's monthly retail/markup cost (resolved from the payload's
+    // VETTED region + plan; a free-form/invalid region or plan yields 0 here and
+    // is rejected by the service's own enum gate before any work). Provisioning
+    // runs in the durable queue, NOT in this request — the adapter just enqueues.
+    interfaceName: "HostingProvider",
+    async: true,
+    label: "Set up managed hosting",
+    target: (p) => String(p.slug ?? ""),
+    requiresEntitlement: "managedHosting",
+    estimateMicro: (p) => {
+      const resolved = resolvePlacement(p.region, p.planName);
+      return resolved.ok ? planEstimateMicro(resolved.placement.plan) : 0n;
+    },
+  },
+  "hosting.scale": {
+    // W5 — scale a running managed deployment. Gated + ASYNC, `managedHosting`.
+    // Not a per-action wallet charge (usage is metered by the tick) → estimate 0.
+    // The max-scale ceiling is enforced server-side against the plan, not here.
+    interfaceName: "HostingProvider",
+    async: true,
+    label: "Resize managed hosting",
+    target: (p) => String(p.slug ?? ""),
+    requiresEntitlement: "managedHosting",
+    estimateMicro: () => 0n,
+  },
+  "hosting.teardown": {
+    // W5 — tear down a managed deployment (stops the meter). Gated + ASYNC,
+    // `managedHosting`. Never a charge → estimate 0. Non-payment / kill-switch
+    // tear-downs are driven server-side and also flow through this verb.
+    interfaceName: "HostingProvider",
+    async: true,
+    label: "Stop managed hosting",
+    target: (p) => String(p.slug ?? ""),
+    requiresEntitlement: "managedHosting",
     estimateMicro: () => 0n,
   },
   "payment.configure": {

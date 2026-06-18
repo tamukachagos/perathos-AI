@@ -44,6 +44,20 @@ function dispatch(request: ActionRequest): ActionResult {
         ok: true,
         detail: `[mock:HostingProvider] deploy queued on Vercel project ${vercelProjectForSlug(slug)}.`,
       };
+    case "hosting.provision":
+    case "hosting.scale":
+    case "hosting.teardown":
+      // W5 — managed (container/K8s) hosting. Async: returning ok leaves the W1
+      // op PENDING; the DURABLE PROVISIONING QUEUE (provisioning_jobs + reconcile
+      // cron) runs the work against the tier backend and settles the op. The
+      // verb's server action enqueues the job + persists the HostingDeployment —
+      // the adapter itself never provisions in the request (the §5.2 rule). The
+      // enum-validated region/plan + the no-raw-spec guard are enforced in the
+      // service before this point.
+      return {
+        ok: true,
+        detail: `[mock:HostingProvider] "${request.verb}" for "${slug}" accepted — queued for provisioning.`,
+      };
     default:
       return { ok: false, detail: `Unsupported hosting verb "${request.verb}".` };
   }

@@ -14,7 +14,8 @@ export type FeatureKey =
   | "removeBranding"
   | "payments"
   | "prioritySupport"
-  | "agentTeam";
+  | "agentTeam"
+  | "managedHosting";
 
 /** User-facing rationale for each gated feature. */
 export const FEATURE_MESSAGE: Record<FeatureKey, string> = {
@@ -26,6 +27,8 @@ export const FEATURE_MESSAGE: Record<FeatureKey, string> = {
   prioritySupport: "Priority support is available on the Pro plan.",
   agentTeam:
     "Your always-on AI team (automatic fixes, updates, and security) is available on the Pro plan.",
+  managedHosting:
+    "Managed hosting (your own always-on app, hosted for you in the region you choose) is available on the Pro plan.",
 };
 
 export class EntitlementError extends Error {

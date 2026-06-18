@@ -32,6 +32,13 @@ export interface Entitlements {
    * work is metered against the wallet so it is naturally budget-bounded.
    */
   agentTeam: boolean;
+  /**
+   * W5 — managed (container/K8s) hosting. Gates the three hosting-control-plane
+   * verbs (hosting.provision / hosting.scale / hosting.teardown) AND the owner's
+   * hosting picker. Pro/Managed only; usage is metered against the wallet at the
+   * hosting markup, so it is naturally budget-bounded and cost-safe.
+   */
+  managedHosting: boolean;
 }
 
 /** A tier in the pricing catalog. Amounts are in ZAR cents (0 = free). */
@@ -72,6 +79,7 @@ export const PLAN_CATALOG: Record<PlanId, Plan> = {
       payments: false,
       prioritySupport: false,
       agentTeam: false,
+      managedHosting: false,
     },
   },
   growth: {
@@ -93,6 +101,7 @@ export const PLAN_CATALOG: Record<PlanId, Plan> = {
       payments: true,
       prioritySupport: false,
       agentTeam: false,
+      managedHosting: false,
     },
   },
   pro: {
@@ -114,6 +123,7 @@ export const PLAN_CATALOG: Record<PlanId, Plan> = {
       payments: true,
       prioritySupport: true,
       agentTeam: true,
+      managedHosting: true,
     },
   },
 };

@@ -125,6 +125,8 @@ model Tenant {
   whatsappOrders      WhatsappOrder[]
   siteRepos           SiteRepo[]
   deployments         Deployment[]
+  hostingDeployments  HostingDeployment[]
+  provisioningJobs    ProvisioningJob[]
   agentJobs           AgentJob[]
   agentPolicy         AgentPolicy?
 
@@ -787,6 +789,102 @@ model Deployment {
   @@index([operationId])
   @@index([providerDeploymentId])
   @@map("deployments")
+}
+
+// ---------------------------------------------------------------------------
+// W5 — Hosting reseller control plane (ENTERPRISE_REVIEW §5.2 + Part 3.A).
+//
+// Managed (container/K8s) hosting, namespace-per-tenant. The owner answers two
+// plain questions (region + named plan); the platform resolves a VETTED plan
+// from the catalog (config) and renders the isolation manifest — NEVER a raw
+// owner manifest/YAML/env (RCE guard). region/planName/tier are the vetted enum
+// STRINGS the server resolved (never free-form). Provisioning runs in the durable
+// ProvisioningJob queue (+ reconcile cron), never in the request; the deployment
+// carries the state machine and `killSwitch`/`anomalyFlag` cost-abuse guardrails.
+//
+// Both tables are tenant-owned -> RLS (ENABLE + FORCE + tenant_isolation), the
+// same backstop as every other tenant table. Only the Prisma impl touches them
+// (DATABASE_URL real); in mock mode the in-memory repo is used.
+// ---------------------------------------------------------------------------
+
+// The managed-hosting deployment state machine:
+//   requested → provisioning → running → (scaling) → suspended → torn_down | failed
+enum HostingDeploymentStatus {
+  requested
+  provisioning
+  running
+  scaling
+  suspended
+  torn_down
+  failed
+}
+
+// One managed-hosting deployment per (tenant, slug). region/planName/tier are the
+// vetted enum strings (server-side allowlist; never free-form). `killSwitch` is
+// the per-tenant hard stop; `anomalyFlag` is the billing-anomaly flag. Money
+// snapshots are ZAR cents (integer). `operationId` links the async provisioning.
+model HostingDeployment {
+  id          String                  @id @default(cuid())
+  tenantId    String
+  slug        String
+  region      String
+  planName    String
+  tier        String
+  status      HostingDeploymentStatus @default(requested)
+  replicas    Int                     @default(1)
+  maxReplicas Int                     @default(1)
+  backendRef  String?
+  killSwitch  Boolean                 @default(false)
+  anomalyFlag Boolean                 @default(false)
+  priceCents  Int                     @default(0)
+  costCents   Int                     @default(0)
+  operationId String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@index([status])
+  @@map("hosting_deployments")
+}
+
+// The durable provisioning-queue job lifecycle. Provisioning NEVER runs in the
+// request — a verb enqueues a job, the reconcile cron (live: QStash/Inngest)
+// runs it against the tier backend, and the job settles the async W1 operation.
+enum ProvisioningJobStatus {
+  queued
+  running
+  done
+  failed
+}
+
+// One unit of provisioning work. `kind` is provision/scale/teardown; `runAfter`
+// is the earliest the sweep may pick it up (ms epoch stored as BigInt to match
+// the in-memory store + avoid timezone math); `attempts` bounds retries.
+model ProvisioningJob {
+  id             String                @id @default(cuid())
+  tenantId       String
+  deploymentId   String
+  kind           String
+  status         ProvisioningJobStatus @default(queued)
+  operationId    String?
+  targetReplicas Int?
+  attempts       Int                   @default(0)
+  // Earliest epoch-ms the reconcile sweep may run this job. BigInt so it matches
+  // the in-memory store's Date.now() ms and needs no timezone conversion.
+  runAfter       BigInt                @default(0)
+  detail         String                @default("")
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([deploymentId])
+  @@map("provisioning_jobs")
 }
 
 // ---------------------------------------------------------------------------

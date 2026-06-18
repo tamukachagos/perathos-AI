@@ -24,6 +24,15 @@ import type {
   DeploymentInput,
   DeploymentRecord,
   DeploymentUpdate,
+  HostingDeploymentInput,
+  HostingDeploymentRecord,
+  HostingDeploymentStatus,
+  HostingDeploymentUpdate,
+  ProvisioningJobInput,
+  ProvisioningJobKind,
+  ProvisioningJobRecord,
+  ProvisioningJobStatus,
+  ProvisioningJobUpdate,
   DomainInput,
   DomainRecord,
   DomainUpdate,
@@ -1494,6 +1503,236 @@ const deployments = {
   },
 };
 
+// --- W5 hosting control plane ------------------------------------------------
+
+interface HostingDeploymentRow {
+  id: string;
+  tenantId: string;
+  slug: string;
+  region: string;
+  planName: string;
+  tier: string;
+  status: string;
+  replicas: number;
+  maxReplicas: number;
+  backendRef: string | null;
+  killSwitch: boolean;
+  anomalyFlag: boolean;
+  priceCents: number;
+  costCents: number;
+  operationId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toHostingDeploymentRecord(
+  row: HostingDeploymentRow,
+): HostingDeploymentRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    slug: row.slug,
+    region: row.region,
+    planName: row.planName,
+    tier: row.tier,
+    status: row.status as HostingDeploymentStatus,
+    replicas: row.replicas,
+    maxReplicas: row.maxReplicas,
+    backendRef: row.backendRef,
+    killSwitch: row.killSwitch,
+    anomalyFlag: row.anomalyFlag,
+    priceCents: row.priceCents,
+    costCents: row.costCents,
+    operationId: row.operationId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const hostingDeployments = {
+  async list(tenantId: string): Promise<HostingDeploymentRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.hostingDeployment.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toHostingDeploymentRecord(r as HostingDeploymentRow));
+  },
+  async get(tenantId: string, id: string): Promise<HostingDeploymentRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.hostingDeployment.findFirst({ where: { id, tenantId } }),
+    );
+    return row ? toHostingDeploymentRecord(row as HostingDeploymentRow) : null;
+  },
+  async getBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<HostingDeploymentRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.hostingDeployment.findFirst({ where: { tenantId, slug } }),
+    );
+    return row ? toHostingDeploymentRecord(row as HostingDeploymentRow) : null;
+  },
+  async create(
+    tenantId: string,
+    input: HostingDeploymentInput,
+  ): Promise<HostingDeploymentRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.hostingDeployment.create({
+        data: {
+          tenantId,
+          slug: input.slug,
+          region: input.region,
+          planName: input.planName,
+          tier: input.tier,
+          status: input.status ?? "requested",
+          replicas: input.replicas,
+          maxReplicas: input.maxReplicas,
+          backendRef: input.backendRef ?? null,
+          killSwitch: input.killSwitch ?? false,
+          anomalyFlag: input.anomalyFlag ?? false,
+          priceCents: input.priceCents,
+          costCents: input.costCents,
+          operationId: input.operationId ?? null,
+        },
+      }),
+    );
+    return toHostingDeploymentRecord(row as HostingDeploymentRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: HostingDeploymentUpdate,
+  ): Promise<HostingDeploymentRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.hostingDeployment.findFirst({
+        where: { id, tenantId },
+      });
+      if (!existing) throw new Error(`HostingDeployment ${id} not found for tenant`);
+      return tx.hostingDeployment.update({
+        where: { id },
+        data: {
+          status: update.status,
+          replicas: update.replicas,
+          backendRef: update.backendRef,
+          killSwitch: update.killSwitch,
+          anomalyFlag: update.anomalyFlag,
+          operationId: update.operationId,
+        },
+      });
+    });
+    return toHostingDeploymentRecord(row as HostingDeploymentRow);
+  },
+  async listRunningAllTenants(): Promise<HostingDeploymentRecord[]> {
+    // Cross-tenant (no session): the metering tick resolves the running rows via
+    // the SECURITY DEFINER function, then meters each INSIDE withTenant. W1 pattern.
+    const rows = await prisma.$queryRaw<HostingDeploymentRow[]>`
+      SELECT * FROM running_hosting_deployments()`;
+    return rows.map((r) => toHostingDeploymentRecord(r));
+  },
+};
+
+interface ProvisioningJobRow {
+  id: string;
+  tenantId: string;
+  deploymentId: string;
+  kind: string;
+  status: string;
+  operationId: string | null;
+  targetReplicas: number | null;
+  attempts: number;
+  runAfter: bigint;
+  detail: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toProvisioningJobRecord(row: ProvisioningJobRow): ProvisioningJobRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    deploymentId: row.deploymentId,
+    kind: row.kind as ProvisioningJobKind,
+    status: row.status as ProvisioningJobStatus,
+    operationId: row.operationId,
+    targetReplicas: row.targetReplicas,
+    attempts: row.attempts,
+    runAfter: Number(row.runAfter),
+    detail: row.detail,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const provisioningJobs = {
+  async list(tenantId: string): Promise<ProvisioningJobRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.provisioningJob.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toProvisioningJobRecord(r as ProvisioningJobRow));
+  },
+  async get(tenantId: string, id: string): Promise<ProvisioningJobRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.provisioningJob.findFirst({ where: { id, tenantId } }),
+    );
+    return row ? toProvisioningJobRecord(row as ProvisioningJobRow) : null;
+  },
+  async create(
+    tenantId: string,
+    input: ProvisioningJobInput,
+  ): Promise<ProvisioningJobRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.provisioningJob.create({
+        data: {
+          tenantId,
+          deploymentId: input.deploymentId,
+          kind: input.kind,
+          status: input.status ?? "queued",
+          operationId: input.operationId ?? null,
+          targetReplicas: input.targetReplicas ?? null,
+          runAfter: BigInt(input.runAfter ?? Date.now()),
+          detail: input.detail ?? "",
+        },
+      }),
+    );
+    return toProvisioningJobRecord(row as ProvisioningJobRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: ProvisioningJobUpdate,
+  ): Promise<ProvisioningJobRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.provisioningJob.findFirst({
+        where: { id, tenantId },
+      });
+      if (!existing) throw new Error(`ProvisioningJob ${id} not found for tenant`);
+      return tx.provisioningJob.update({
+        where: { id },
+        data: {
+          status: update.status,
+          attempts: update.attempts,
+          runAfter:
+            update.runAfter !== undefined ? BigInt(update.runAfter) : undefined,
+          detail: update.detail,
+        },
+      });
+    });
+    return toProvisioningJobRecord(row as ProvisioningJobRow);
+  },
+  async listRunnableAllTenants(now: number): Promise<ProvisioningJobRecord[]> {
+    // Cross-tenant (no session): the durable-queue sweep. now is bound as int8
+    // (BIGINT) to match the SQL function parameter (the W2 binding lesson).
+    const rows = await prisma.$queryRaw<ProvisioningJobRow[]>`
+      SELECT * FROM runnable_provisioning_jobs(${BigInt(now)})`;
+    return rows.map((r) => toProvisioningJobRecord(r));
+  },
+};
+
 // --- W7 agent jobs + policy --------------------------------------------------
 
 interface AgentJobRow {
@@ -1684,6 +1923,8 @@ export const prismaRepositories: Repositories = {
   whatsappOrders,
   siteRepos,
   deployments,
+  hostingDeployments,
+  provisioningJobs,
   agentJobs,
   agentPolicies,
 };

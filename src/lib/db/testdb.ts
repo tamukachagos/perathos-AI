@@ -20,6 +20,7 @@ export async function truncateAll(): Promise<void> {
       "domains",
       "local_listings","products","whatsapp_orders",
       "site_repos","deployments",
+      "hosting_deployments","provisioning_jobs",
       "agent_jobs","agent_policies",
       "audit_log","leads","site_versions","generated_sites",
       "businesses","subscriptions","adapter_connections","memberships","tenants"

@@ -93,6 +93,42 @@ function looksLikeIpLiteral(host: string): boolean {
 }
 
 /**
+ * W5 (Part 3.A SSRF) — IPv6 equivalents of the blocked IPv4 ranges. A host that
+ * is (or, after stripping brackets, is) one of these must NEVER be reachable
+ * outbound, mirroring the IPv4 metadata/loopback/RFC1918 blocks. Covers:
+ *   * ::1 / ::                      loopback / unspecified
+ *   * fe80::/10                     link-local (incl. the IPv6 metadata route)
+ *   * fc00::/7 (fc.. / fd..)        unique-local (the IPv6 RFC1918 analogue)
+ *   * fec0::/10 (deprecated site-local)
+ *   * ::ffff:a.b.c.d / ::ffff:hex   IPv4-mapped (a metadata-IP smuggle vector)
+ *   * 2002:a9fe:... etc are caught by the embedded-IPv4 check upstream.
+ * The cloud metadata IP 169.254.169.254 is also exposed over IPv6 as
+ * fd00:ec2::254 (AWS) — covered by the fd00::/8 unique-local block.
+ */
+function isBlockedIpv6Literal(host: string): boolean {
+  let h = host.trim().toLowerCase();
+  // Strip the [..] form (and any :port the caller may have left on a literal).
+  if (h.startsWith("[")) {
+    const end = h.indexOf("]");
+    if (end !== -1) h = h.slice(1, end);
+  }
+  if (!h.includes(":")) return false; // not an IPv6 literal
+  // Loopback / unspecified.
+  if (h === "::1" || h === "::" || h === "0:0:0:0:0:0:0:1") return true;
+  // IPv4-mapped (::ffff:169.254.169.254 etc) — block all mapped literals; a
+  // mapped public IP has no business being addressed as a bracketed v6 literal.
+  if (h.includes("::ffff:") || h.startsWith("::ffff")) return true;
+  // Link-local fe80::/10.
+  if (/^fe[89ab]/.test(h)) return true;
+  // Unique-local fc00::/7 (fc.. and fd.. — includes the IPv6 metadata route).
+  if (/^f[cd]/.test(h)) return true;
+  // Deprecated site-local fec0::/10.
+  if (/^fec/.test(h)) return true;
+  // Default-deny: any other bare IPv6 literal is not an allowlisted hostname.
+  return true;
+}
+
+/**
  * Validate + normalise a hostname for registrar use. Returns the lower-cased
  * hostname plus its matched TLD and second-level domain (SLD) on success, or a
  * stable rejection reason. This is the ONLY gate any registrar-facing code path
@@ -170,6 +206,12 @@ export function isOutboundHostAllowed(
   if (typeof host !== "string") return false;
   const h = host.trim().toLowerCase();
   if (!h) return false;
+  // W5 (Part 3.A): block IPv6 metadata/loopback/link-local/unique-local literals
+  // (incl. ::1, fe80::/10, fc00::/7, ::ffff:-mapped, and the IPv6 metadata route)
+  // — the IPv6 equivalents of the IPv4 blocks below.
+  if ((h.includes(":") || h.includes("[")) && isBlockedIpv6Literal(h)) {
+    return false;
+  }
   // Never allow IP literals or reserved/internal names outbound.
   if (looksLikeIpLiteral(h)) {
     // Block link-local, loopback, and RFC1918 ranges explicitly.

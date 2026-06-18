@@ -788,6 +788,195 @@ export interface DeploymentRepository {
   ): Promise<{ tenantId: string; deploymentId: string } | null>;
 }
 
+// --- W5 hosting control plane ------------------------------------------------
+
+/**
+ * The managed-hosting deployment state machine (ENTERPRISE_REVIEW §5.2):
+ *   requested → provisioning → running → (scaling) → suspended → torn_down | failed
+ * `suspended` is the cost-safe state a non-paying / over-quota deployment lands
+ * in (the meter stops conceptually until tear-down). `torn_down` is terminal.
+ */
+export type HostingDeploymentStatus =
+  | "requested"
+  | "provisioning"
+  | "running"
+  | "scaling"
+  | "suspended"
+  | "torn_down"
+  | "failed";
+
+/**
+ * A tenant-owned managed-hosting deployment. The region + plan are stored as the
+ * vetted enum strings the server resolved (NEVER free-form). `tier` is derived
+ * from the plan. `backendRef` is the tier-backend id (mock: synthetic).
+ * `replicas` is the current (clamped) replica count; `killSwitch` is the
+ * per-tenant hard stop (suspends the deployment regardless of payment).
+ * `operationId` links the async provisioning op. Money snapshots are ZAR cents.
+ */
+export interface HostingDeploymentRecord {
+  id: string;
+  tenantId: string;
+  slug: string;
+  /** Vetted region enum: "us" | "eu" | "asia". */
+  region: string;
+  /** Vetted plan-name enum: "starter" | "business" | "scale". */
+  planName: string;
+  /** Tier derived from the plan: "static" | "container" | "kubernetes". */
+  tier: string;
+  status: HostingDeploymentStatus;
+  replicas: number;
+  /** The plan's hard scale ceiling at provision time (cost-abuse guardrail). */
+  maxReplicas: number;
+  /** Tier-backend reference (mock: synthetic). */
+  backendRef: string | null;
+  /** Per-tenant kill switch — true suspends the deployment + stops the meter. */
+  killSwitch: boolean;
+  /** Billing-anomaly flag raised when metered draw outpaces the plan. */
+  anomalyFlag: boolean;
+  /** Monthly retail price snapshot, ZAR cents. */
+  priceCents: number;
+  /** Monthly wholesale cost snapshot, ZAR cents. */
+  costCents: number;
+  /** The async W1 operation that provisions/scales/tears down this deployment. */
+  operationId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface HostingDeploymentInput {
+  slug: string;
+  region: string;
+  planName: string;
+  tier: string;
+  status?: HostingDeploymentStatus;
+  replicas: number;
+  maxReplicas: number;
+  backendRef?: string | null;
+  killSwitch?: boolean;
+  anomalyFlag?: boolean;
+  priceCents: number;
+  costCents: number;
+  operationId?: string | null;
+}
+
+export interface HostingDeploymentUpdate {
+  status?: HostingDeploymentStatus;
+  replicas?: number;
+  backendRef?: string | null;
+  killSwitch?: boolean;
+  anomalyFlag?: boolean;
+  operationId?: string | null;
+}
+
+/** The kind of work a provisioning job performs. */
+export type ProvisioningJobKind = "provision" | "scale" | "teardown";
+
+/**
+ * The durable provisioning-queue job lifecycle (§5.2: "provisioning runs in a
+ * durable queue, not the request"). A job is enqueued by a verb, picked up by
+ * the reconcile cron (live: QStash/Inngest), and run against the tier backend.
+ */
+export type ProvisioningJobStatus =
+  | "queued"
+  | "running"
+  | "done"
+  | "failed";
+
+/**
+ * One unit of provisioning work in the durable queue. Bound to the hosting
+ * deployment it acts on + the async operation it settles. No raw spec lives here
+ * — the manifest is rendered from the catalog at run time. `attempts` bounds
+ * retries; `runAfter` is the earliest the reconcile sweep may run it.
+ */
+export interface ProvisioningJobRecord {
+  id: string;
+  tenantId: string;
+  deploymentId: string;
+  kind: ProvisioningJobKind;
+  status: ProvisioningJobStatus;
+  /** The async W1 operation this job settles on completion. */
+  operationId: string | null;
+  /** Desired replica count for a scale job (ignored for provision/teardown). */
+  targetReplicas: number | null;
+  attempts: number;
+  /** Earliest epoch-ms the reconcile sweep may pick this up. */
+  runAfter: number;
+  detail: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProvisioningJobInput {
+  deploymentId: string;
+  kind: ProvisioningJobKind;
+  status?: ProvisioningJobStatus;
+  operationId?: string | null;
+  targetReplicas?: number | null;
+  runAfter?: number;
+  detail?: string;
+}
+
+export interface ProvisioningJobUpdate {
+  status?: ProvisioningJobStatus;
+  attempts?: number;
+  runAfter?: number;
+  detail?: string;
+}
+
+// --- W5 hosting repositories -------------------------------------------------
+
+export interface HostingDeploymentRepository {
+  /** All managed-hosting deployments owned by a tenant (newest first). */
+  list(tenantId: string): Promise<HostingDeploymentRecord[]>;
+  /** Read a deployment by id, tenant-scoped (null if not this tenant's). */
+  get(tenantId: string, id: string): Promise<HostingDeploymentRecord | null>;
+  /** A site's managed-hosting deployment, or null (one per (tenant, slug)). */
+  getBySlug(tenantId: string, slug: string): Promise<HostingDeploymentRecord | null>;
+  /** Create a tenant-owned deployment at request time (bound to tenantId here). */
+  create(
+    tenantId: string,
+    input: HostingDeploymentInput,
+  ): Promise<HostingDeploymentRecord>;
+  /** Update mutable fields (status/replicas/backendRef/flags), tenant-scoped. */
+  update(
+    tenantId: string,
+    id: string,
+    update: HostingDeploymentUpdate,
+  ): Promise<HostingDeploymentRecord>;
+  /**
+   * All RUNNING deployments across all tenants, for the metering tick (which has
+   * no tenant session). Returns the count-bearing rows so the tick can meter each.
+   * Under Postgres FORCE RLS this routes through a tightly-scoped SECURITY DEFINER
+   * function (the W1 pattern); the tick then meters INSIDE each tenant's scope.
+   */
+  listRunningAllTenants(): Promise<HostingDeploymentRecord[]>;
+}
+
+export interface ProvisioningJobRepository {
+  /** All jobs owned by a tenant (newest first). */
+  list(tenantId: string): Promise<ProvisioningJobRecord[]>;
+  /** Read a job by id, tenant-scoped. */
+  get(tenantId: string, id: string): Promise<ProvisioningJobRecord | null>;
+  /** Create a tenant-owned job (bound to tenantId here). */
+  create(
+    tenantId: string,
+    input: ProvisioningJobInput,
+  ): Promise<ProvisioningJobRecord>;
+  /** Update mutable fields (status/attempts/runAfter/detail), tenant-scoped. */
+  update(
+    tenantId: string,
+    id: string,
+    update: ProvisioningJobUpdate,
+  ): Promise<ProvisioningJobRecord>;
+  /**
+   * All QUEUED jobs whose runAfter has elapsed, across all tenants (the durable
+   * queue's reconcile sweep has no tenant session). Under Postgres FORCE RLS this
+   * routes through a SECURITY DEFINER function; the sweep then runs each job
+   * INSIDE its owning tenant's scope. (Live: QStash/Inngest delivers per-job.)
+   */
+  listRunnableAllTenants(now: number): Promise<ProvisioningJobRecord[]>;
+}
+
 // --- W7 agent team ----------------------------------------------------------
 
 /**
@@ -931,6 +1120,8 @@ export interface Repositories {
   whatsappOrders: WhatsappOrderRepository;
   siteRepos: SiteRepoRepository;
   deployments: DeploymentRepository;
+  hostingDeployments: HostingDeploymentRepository;
+  provisioningJobs: ProvisioningJobRepository;
   agentJobs: AgentJobRepository;
   agentPolicies: AgentPolicyRepository;
 }

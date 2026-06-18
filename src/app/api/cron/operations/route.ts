@@ -21,6 +21,7 @@ import { logger } from "@/lib/logger";
 import { captureError } from "@/lib/observability";
 import { MissingProductionSecretError, requireProductionSecret } from "@/lib/env";
 import { reconcileAll } from "@/integrations/core/operationStore";
+import { sweepProvisioningQueue } from "@/integrations/hosting/sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -61,9 +62,14 @@ async function runReconcile(request: Request) {
 
   try {
     const now = Date.now();
+    // W5: run the durable provisioning queue FIRST (provision/scale/teardown jobs
+    // each settle their own async op against the tier backend), THEN reconcile any
+    // remaining pending ops mock-style. The queue is the live path for managed
+    // hosting; the reconcile sweep is the backstop for ops with no driver.
+    const provisioned = await sweepProvisioningQueue(now);
     const settled = await reconcileAll(now);
-    logger.info("operations.reconcile", { settled });
-    return NextResponse.json({ ok: true, settled });
+    logger.info("operations.reconcile", { settled, provisioned });
+    return NextResponse.json({ ok: true, settled, provisioned });
   } catch (error) {
     await captureError("operations.reconcile.failed", error);
     return NextResponse.json(

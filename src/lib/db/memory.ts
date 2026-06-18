@@ -21,6 +21,12 @@ import type {
   DeploymentInput,
   DeploymentRecord,
   DeploymentUpdate,
+  HostingDeploymentInput,
+  HostingDeploymentRecord,
+  HostingDeploymentUpdate,
+  ProvisioningJobInput,
+  ProvisioningJobRecord,
+  ProvisioningJobUpdate,
   DomainInput,
   DomainRecord,
   DomainUpdate,
@@ -73,6 +79,8 @@ interface Store {
   whatsappOrders: WhatsappOrderRecord[]; // append-only across all tenants (W8)
   siteRepos: SiteRepoRecord[]; // append-only across all tenants (W6)
   deployments: DeploymentRecord[]; // append-only across all tenants (W6)
+  hostingDeployments: HostingDeploymentRecord[]; // across all tenants (W5)
+  provisioningJobs: ProvisioningJobRecord[]; // across all tenants (W5)
   agentJobs: AgentJobRecord[]; // append-only across all tenants (W7)
   agentPolicies: Map<string, AgentPolicyRecord>; // keyed by tenantId (W7)
   seq: number;
@@ -125,6 +133,8 @@ function createStore(): Store {
     whatsappOrders: [],
     siteRepos: [],
     deployments: [],
+    hostingDeployments: [],
+    provisioningJobs: [],
     agentJobs: [],
     agentPolicies: new Map(),
     seq: 1,
@@ -968,6 +978,143 @@ const deployments = {
   },
 };
 
+// --- W5 hosting control plane (mock) ----------------------------------------
+
+const hostingDeployments = {
+  async list(tenantId: string): Promise<HostingDeploymentRecord[]> {
+    return store()
+      .hostingDeployments.filter((d) => d.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((d) => ({ ...d }));
+  },
+  async get(tenantId: string, id: string): Promise<HostingDeploymentRecord | null> {
+    const found = store().hostingDeployments.find(
+      (d) => d.id === id && d.tenantId === tenantId,
+    );
+    return found ? { ...found } : null;
+  },
+  async getBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<HostingDeploymentRecord | null> {
+    const found = store().hostingDeployments.find(
+      (d) => d.tenantId === tenantId && d.slug === slug,
+    );
+    return found ? { ...found } : null;
+  },
+  async create(
+    tenantId: string,
+    input: HostingDeploymentInput,
+  ): Promise<HostingDeploymentRecord> {
+    const now = new Date().toISOString();
+    const record: HostingDeploymentRecord = {
+      id: nextId("hdep"),
+      tenantId,
+      slug: input.slug,
+      region: input.region,
+      planName: input.planName,
+      tier: input.tier,
+      status: input.status ?? "requested",
+      replicas: input.replicas,
+      maxReplicas: input.maxReplicas,
+      backendRef: input.backendRef ?? null,
+      killSwitch: input.killSwitch ?? false,
+      anomalyFlag: input.anomalyFlag ?? false,
+      priceCents: input.priceCents,
+      costCents: input.costCents,
+      operationId: input.operationId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().hostingDeployments.push(record);
+    return { ...record };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: HostingDeploymentUpdate,
+  ): Promise<HostingDeploymentRecord> {
+    const existing = store().hostingDeployments.find(
+      (d) => d.id === id && d.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`HostingDeployment ${id} not found for tenant`);
+    if (update.status !== undefined) existing.status = update.status;
+    if (update.replicas !== undefined) existing.replicas = update.replicas;
+    if (update.backendRef !== undefined) existing.backendRef = update.backendRef;
+    if (update.killSwitch !== undefined) existing.killSwitch = update.killSwitch;
+    if (update.anomalyFlag !== undefined) existing.anomalyFlag = update.anomalyFlag;
+    if (update.operationId !== undefined) existing.operationId = update.operationId;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing };
+  },
+  async listRunningAllTenants(): Promise<HostingDeploymentRecord[]> {
+    // Cross-tenant (no session) — the metering tick. Mock scan is safe (single
+    // process); Postgres routes through a SECURITY DEFINER function.
+    return store()
+      .hostingDeployments.filter((d) => d.status === "running")
+      .map((d) => ({ ...d }));
+  },
+};
+
+const provisioningJobs = {
+  async list(tenantId: string): Promise<ProvisioningJobRecord[]> {
+    return store()
+      .provisioningJobs.filter((j) => j.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((j) => ({ ...j }));
+  },
+  async get(tenantId: string, id: string): Promise<ProvisioningJobRecord | null> {
+    const found = store().provisioningJobs.find(
+      (j) => j.id === id && j.tenantId === tenantId,
+    );
+    return found ? { ...found } : null;
+  },
+  async create(
+    tenantId: string,
+    input: ProvisioningJobInput,
+  ): Promise<ProvisioningJobRecord> {
+    const now = new Date().toISOString();
+    const record: ProvisioningJobRecord = {
+      id: nextId("pjob"),
+      tenantId,
+      deploymentId: input.deploymentId,
+      kind: input.kind,
+      status: input.status ?? "queued",
+      operationId: input.operationId ?? null,
+      targetReplicas: input.targetReplicas ?? null,
+      attempts: 0,
+      runAfter: input.runAfter ?? Date.now(),
+      detail: input.detail ?? "",
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().provisioningJobs.push(record);
+    return { ...record };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: ProvisioningJobUpdate,
+  ): Promise<ProvisioningJobRecord> {
+    const existing = store().provisioningJobs.find(
+      (j) => j.id === id && j.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`ProvisioningJob ${id} not found for tenant`);
+    if (update.status !== undefined) existing.status = update.status;
+    if (update.attempts !== undefined) existing.attempts = update.attempts;
+    if (update.runAfter !== undefined) existing.runAfter = update.runAfter;
+    if (update.detail !== undefined) existing.detail = update.detail;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing };
+  },
+  async listRunnableAllTenants(now: number): Promise<ProvisioningJobRecord[]> {
+    return store()
+      .provisioningJobs.filter((j) => j.status === "queued" && j.runAfter <= now)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((j) => ({ ...j }));
+  },
+};
+
 // --- W7 agent jobs + policy (mock) ------------------------------------------
 
 const agentJobs = {
@@ -1093,6 +1240,8 @@ export const memoryRepositories: Repositories = {
   whatsappOrders,
   siteRepos,
   deployments,
+  hostingDeployments,
+  provisioningJobs,
   agentJobs,
   agentPolicies,
 };

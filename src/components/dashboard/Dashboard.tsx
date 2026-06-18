@@ -33,6 +33,7 @@ import { OnboardingWizard } from "./OnboardingWizard";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { DomainStep } from "./DomainStep";
 import { DeployStep } from "./DeployStep";
+import { HostingStep } from "./HostingStep";
 import { GbpStep } from "./GbpStep";
 import { WhatsappCommerce } from "./WhatsappCommerce";
 
@@ -88,6 +89,7 @@ const FREE_ENTITLEMENTS: Entitlements = {
   payments: false,
   prioritySupport: false,
   agentTeam: false,
+  managedHosting: false,
 };
 
 export function Dashboard({
@@ -427,6 +429,14 @@ export function Dashboard({
           authenticated={authenticated}
           slug={published ? ownSlug : latestSite?.slug ?? null}
           canConnectDomain={Boolean(entitlements.customDomain)}
+          onNotice={setNotice}
+        />
+
+        <HostingStep
+          business={business}
+          authenticated={authenticated}
+          slug={published ? ownSlug : latestSite?.slug ?? null}
+          canHost={Boolean(entitlements.managedHosting)}
           onNotice={setNotice}
         />
 
