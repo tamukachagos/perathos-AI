@@ -1,52 +1,35 @@
 import { test, expect } from "@playwright/test";
 
-// Golden-path E2E (M5): onboarding (describe -> profile) -> publish -> open the
-// published /s/[slug] and assert the business renders with LocalBusiness JSON-LD,
-// the wa.me CTA, and the consent-gated lead form.
-//
-// Runs entirely in MOCK mode (no DATABASE_URL, no secrets). The wizard's "Use an
-// example" seeds the Maboneng description; the mock Agent leaves contact fields
-// blank by design (the owner supplies them), so the dashboard profile step sets
-// a clean name + WhatsApp before publishing. The resulting slug
-// (maboneng-mobile-spa) is also the seeded server-rendered site, so the page is
-// server-rendered with JSON-LD in the initial HTML.
+// Golden-path E2E: drive the Launch Studio workspace (set profile -> publish via
+// the Preview pane) -> open the published /s/[slug] and assert the business
+// renders with LocalBusiness JSON-LD, the wa.me CTA, and the consent-gated lead
+// form. Runs entirely in MOCK mode (no DATABASE_URL, no secrets). The default
+// anonymous draft is the Maboneng sample; the seeded slug (maboneng-mobile-spa)
+// is also the server-rendered site, so JSON-LD is present in the initial HTML.
 
 const SEED_SLUG = "maboneng-mobile-spa";
 
-test("onboarding -> publish -> live site with JSON-LD, wa.me CTA, consent form", async ({
+test("studio -> publish -> live site with JSON-LD, wa.me CTA, consent form", async ({
   page,
 }) => {
-  // 1) Onboarding: describe the business in plain language.
+  // 1) Launch Studio loads at / (the conversational workspace).
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: "Launch Desk", level: 1 }),
-  ).toBeVisible();
+  const rail = page.locator(".studio-menu");
+  await expect(page.getByRole("tab", { name: "Assistant" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Describe your business" }).click();
-  const wizard = page.getByRole("dialog", { name: "Onboarding wizard" });
-  await expect(wizard).toBeVisible();
-
-  // Use the built-in example, then generate a structured profile (mock Agent).
-  await wizard.getByRole("button", { name: "Use an example" }).click();
-  await wizard.getByRole("button", { name: /Generate profile/ }).click();
-
-  // 2) Review phase: the generated profile is shown for review; apply it.
-  await expect(wizard.getByLabel("Business name")).toHaveValue(
-    /Maboneng Mobile Spa/,
-  );
-  await wizard.getByRole("button", { name: "Apply to dashboard" }).click();
-  await expect(wizard).toBeHidden();
-
-  // 2b) Refine on the dashboard: set a clean name + the WhatsApp number the
-  // mock Agent leaves blank (it never invents contact details).
+  // 2) Set the profile in the Profile section (reuses the existing form). The
+  // default anonymous draft is already Maboneng; we set name + WhatsApp explicitly.
+  await rail.getByRole("button", { name: "Profile" }).click();
   await page.locator("#bp-name").fill("Maboneng Mobile Spa");
   await page.locator("#bp-whatsapp").fill("+27 82 555 0198");
 
-  // 3) Publish the draft. Anonymous publish routes to /s/<slug>.
-  await page.getByRole("button", { name: /Publish (draft|update)/ }).click();
-  await page.waitForURL(`**/s/${SEED_SLUG}`);
+  // 3) Publish from the Preview pane (left-menu "Preview" opens the workspace
+  // Preview tab + the publish button).
+  await rail.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: /Publish site|Update site/ }).click();
 
-  // 4) The published site renders the business.
+  // 4) Open the published site directly and assert it renders the business.
+  await page.goto(`/s/${SEED_SLUG}`);
   await expect(
     page.getByRole("heading", { name: "Maboneng Mobile Spa", level: 1 }),
   ).toBeVisible();
@@ -79,7 +62,6 @@ test("onboarding -> publish -> live site with JSON-LD, wa.me CTA, consent form",
   await expect(submit).toBeDisabled();
   await page.getByLabel("Your name").fill("Test Visitor");
   await page.getByLabel("Phone or email").fill("visitor@example.com");
-  // Still disabled without consent.
   await expect(submit).toBeDisabled();
   await page
     .getByRole("checkbox", { name: /I consent to .* contacting me/ })
