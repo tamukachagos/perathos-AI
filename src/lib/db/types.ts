@@ -137,6 +137,156 @@ export interface DomainUpdate {
   operationId?: string | null;
 }
 
+// --- W8 Google Business Profile (B1) -----------------------------------------
+
+/**
+ * The GBP listing lifecycle. Google verification is ASYNC: a freshly created
+ * listing is `pending_verification` until Google confirms ownership (mock: the
+ * W1 reconcile sweep settles it), then `live`. A rejected/failed verification
+ * lands `failed`. `draft` is the pre-submit state before `gbp.create`.
+ */
+export type LocalListingStatus =
+  | "draft"
+  | "pending_verification"
+  | "live"
+  | "failed";
+
+/**
+ * A tenant-owned Google Business Profile listing. The NAP (Name / Address-area /
+ * Phone) is the SINGLE SOURCE derived from the Business profile and reused both
+ * on-site (JSON-LD) and pushed to GBP — so the listing carries a snapshot of it.
+ * `googleLocationId` / `operationId` link the async create/verify lifecycle.
+ */
+export interface LocalListingRecord {
+  id: string;
+  tenantId: string;
+  businessId: string | null;
+  /** NAP — Name. */
+  name: string;
+  /** NAP — Address/service area (SA SMBs are often area-based, not a street). */
+  area: string;
+  /** NAP — Phone (E.164-ish, derived from the business WhatsApp/phone). */
+  phone: string;
+  /** GBP primary + additional categories (e.g. "Plumber"). */
+  categories: string[];
+  /** Opening hours, free-form JSON (per-day ranges); null when not set. */
+  hours: Record<string, unknown> | null;
+  status: LocalListingStatus;
+  /** The Google location resource id once created (mock: synthetic). */
+  googleLocationId: string | null;
+  /** The async W1 operation that creates/verifies this listing. */
+  operationId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LocalListingInput {
+  businessId?: string | null;
+  name: string;
+  area: string;
+  phone: string;
+  categories?: string[];
+  hours?: Record<string, unknown> | null;
+  status?: LocalListingStatus;
+  googleLocationId?: string | null;
+  operationId?: string | null;
+}
+
+export interface LocalListingUpdate {
+  name?: string;
+  area?: string;
+  phone?: string;
+  categories?: string[];
+  hours?: Record<string, unknown> | null;
+  status?: LocalListingStatus;
+  googleLocationId?: string | null;
+  operationId?: string | null;
+}
+
+// --- W8 WhatsApp commerce (B2) -----------------------------------------------
+
+/** A catalog product offered over WhatsApp. priceCents is ZAR cents (BigInt). */
+export interface ProductRecord {
+  id: string;
+  tenantId: string;
+  businessId: string | null;
+  name: string;
+  description: string;
+  /** ZAR cents. BigInt end-to-end (the column is BigInt) — never widened. */
+  priceCents: bigint;
+  imageUrl: string | null;
+  available: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProductInput {
+  businessId?: string | null;
+  name: string;
+  description?: string;
+  priceCents: bigint;
+  imageUrl?: string | null;
+  available?: boolean;
+}
+
+export interface ProductUpdate {
+  name?: string;
+  description?: string;
+  priceCents?: bigint;
+  imageUrl?: string | null;
+  available?: boolean;
+}
+
+/** The WhatsApp order lifecycle. */
+export type WhatsappOrderStatus =
+  | "draft"
+  | "sent"
+  | "paid"
+  | "fulfilled"
+  | "canceled";
+
+/** One line item snapshot inside an order (price captured at order time). */
+export interface WhatsappOrderItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  /** Unit price in ZAR cents at order time. */
+  priceCents: number;
+}
+
+/** A tenant-owned order captured over WhatsApp. totalCents is ZAR cents. */
+export interface WhatsappOrderRecord {
+  id: string;
+  tenantId: string;
+  businessId: string | null;
+  /** Customer WhatsApp contact (E.164-ish). */
+  customerContact: string;
+  items: WhatsappOrderItem[];
+  /** ZAR cents. BigInt end-to-end. */
+  totalCents: bigint;
+  status: WhatsappOrderStatus;
+  /** The PaymentLink id this order was billed through, when a link was created. */
+  paymentLinkRef: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WhatsappOrderInput {
+  businessId?: string | null;
+  customerContact: string;
+  items: WhatsappOrderItem[];
+  totalCents: bigint;
+  status?: WhatsappOrderStatus;
+  paymentLinkRef?: string | null;
+}
+
+export interface WhatsappOrderUpdate {
+  items?: WhatsappOrderItem[];
+  totalCents?: bigint;
+  status?: WhatsappOrderStatus;
+  paymentLinkRef?: string | null;
+}
+
 export type AdapterConnMode = "mock" | "sandbox" | "live";
 export type AdapterConnStatus = "ready" | "review" | "pending";
 
@@ -447,6 +597,50 @@ export interface InvoiceRepository {
   list(tenantId: string): Promise<InvoiceRecord[]>;
 }
 
+// --- W8 repositories ---------------------------------------------------------
+
+export interface LocalListingRepository {
+  /** All listings owned by a tenant (newest first). */
+  list(tenantId: string): Promise<LocalListingRecord[]>;
+  /** Read a listing by id, tenant-scoped (null if not this tenant's). */
+  get(tenantId: string, id: string): Promise<LocalListingRecord | null>;
+  /** The tenant's primary (first) listing, or null. */
+  getPrimary(tenantId: string): Promise<LocalListingRecord | null>;
+  create(tenantId: string, input: LocalListingInput): Promise<LocalListingRecord>;
+  update(
+    tenantId: string,
+    id: string,
+    update: LocalListingUpdate,
+  ): Promise<LocalListingRecord>;
+}
+
+export interface ProductRepository {
+  /** All products owned by a tenant (newest first). */
+  list(tenantId: string): Promise<ProductRecord[]>;
+  get(tenantId: string, id: string): Promise<ProductRecord | null>;
+  create(tenantId: string, input: ProductInput): Promise<ProductRecord>;
+  update(
+    tenantId: string,
+    id: string,
+    update: ProductUpdate,
+  ): Promise<ProductRecord>;
+}
+
+export interface WhatsappOrderRepository {
+  /** All orders owned by a tenant (newest first). */
+  list(tenantId: string): Promise<WhatsappOrderRecord[]>;
+  get(tenantId: string, id: string): Promise<WhatsappOrderRecord | null>;
+  create(
+    tenantId: string,
+    input: WhatsappOrderInput,
+  ): Promise<WhatsappOrderRecord>;
+  update(
+    tenantId: string,
+    id: string,
+    update: WhatsappOrderUpdate,
+  ): Promise<WhatsappOrderRecord>;
+}
+
 /** The full data-access surface, assembled by the factory. */
 export interface Repositories {
   businesses: BusinessRepository;
@@ -459,4 +653,7 @@ export interface Repositories {
   wallet: WalletRepository;
   usage: UsageRepository;
   invoices: InvoiceRepository;
+  localListings: LocalListingRepository;
+  products: ProductRepository;
+  whatsappOrders: WhatsappOrderRepository;
 }

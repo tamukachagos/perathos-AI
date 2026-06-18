@@ -120,6 +120,9 @@ model Tenant {
   tokenWallet         TokenWallet?
   usageRecords        UsageRecord[]
   invoices            Invoice[]
+  localListings       LocalListing[]
+  products            Product[]
+  whatsappOrders      WhatsappOrder[]
 
   @@map("tenants")
 }
@@ -165,6 +168,9 @@ model Business {
   domains        Domain[]
   paymentLinks   PaymentLink[]
   leads          Lead[]
+  localListings  LocalListing[]
+  products       Product[]
+  whatsappOrders WhatsappOrder[]
 
   @@index([tenantId])
   @@map("businesses")
@@ -595,4 +601,106 @@ model AuditLog {
   @@index([tenantId])
   @@index([createdAt])
   @@map("audit_log")
+}
+
+// ---------------------------------------------------------------------------
+// W8 — Google Business Profile automation (B1) + WhatsApp commerce (B2).
+//
+// All three are tenant-owned → RLS (ENABLE + FORCE + tenant_isolation), the
+// same backstop as every other tenant table. Only the Prisma store impl ever
+// touches them (DATABASE_URL real); in mock mode the in-memory store is used.
+// Money (priceCents / totalCents) is ZAR cents stored as BigInt so a large
+// catalog/order total never loses precision.
+// ---------------------------------------------------------------------------
+
+// The GBP listing lifecycle. Google verification is async; status tracks it.
+enum LocalListingStatus {
+  draft
+  pending_verification
+  live
+  failed
+}
+
+// A tenant-owned Google Business Profile listing. NAP (name/area/phone) is the
+// SINGLE SOURCE derived from the Business profile (also used in JSON-LD) and
+// pushed to GBP. `googleLocationId`/`operationId` link the async lifecycle.
+model LocalListing {
+  id               String             @id @default(cuid())
+  tenantId         String
+  businessId       String?
+  name             String
+  // Address/service area (SA SMBs are often area-based, not a street address).
+  area             String             @default("")
+  phone            String             @default("")
+  // GBP categories (primary + additional). JSON array of strings.
+  categories       Json?
+  // Opening hours, free-form JSON (per-day ranges).
+  hours            Json?
+  status           LocalListingStatus @default(draft)
+  // Google location resource id once created (mock: synthetic).
+  googleLocationId String?
+  // The async W1 operation that creates/verifies this listing.
+  operationId      String?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@map("local_listings")
+}
+
+// A catalog product offered over WhatsApp. priceCents is ZAR cents (BigInt).
+model Product {
+  id          String   @id @default(cuid())
+  tenantId    String
+  businessId  String?
+  name        String
+  description String   @default("")
+  priceCents  BigInt   @default(0)
+  imageUrl    String?
+  available   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@map("products")
+}
+
+// The WhatsApp order lifecycle.
+enum WhatsappOrderStatus {
+  draft
+  sent
+  paid
+  fulfilled
+  canceled
+}
+
+// A tenant-owned order captured over WhatsApp. totalCents is ZAR cents (BigInt).
+// `paymentLinkRef` is the PaymentLink id this order was billed through (if any).
+model WhatsappOrder {
+  id              String              @id @default(cuid())
+  tenantId        String
+  businessId      String?
+  customerContact String
+  // Line-item snapshot (productId/name/quantity/priceCents captured at order time).
+  items           Json
+  totalCents      BigInt              @default(0)
+  status          WhatsappOrderStatus @default(draft)
+  paymentLinkRef  String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  business Business? @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([businessId])
+  @@map("whatsapp_orders")
 }

@@ -20,6 +20,12 @@ import type {
   InvoiceStatus,
   LeadInput,
   LeadRecord,
+  LocalListingInput,
+  LocalListingRecord,
+  LocalListingUpdate,
+  ProductInput,
+  ProductRecord,
+  ProductUpdate,
   Repositories,
   SiteRecord,
   SiteVersionRecord,
@@ -28,6 +34,10 @@ import type {
   UsageRecordInput,
   UsageRecordRow,
   WalletRecord,
+  WhatsappOrderInput,
+  WhatsappOrderItem,
+  WhatsappOrderRecord,
+  WhatsappOrderUpdate,
 } from "../types";
 import type { PlanId } from "@/lib/billing/plans";
 import { prisma, withTenant } from "./client";
@@ -937,6 +947,304 @@ const invoices = {
   },
 };
 
+// --- W8 GBP listings (Prisma/Postgres) --------------------------------------
+
+interface LocalListingRow {
+  id: string;
+  tenantId: string;
+  businessId: string | null;
+  name: string;
+  area: string;
+  phone: string;
+  categories: unknown;
+  hours: unknown;
+  status: string;
+  googleLocationId: string | null;
+  operationId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toLocalListingRecord(row: LocalListingRow): LocalListingRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    businessId: row.businessId,
+    name: row.name,
+    area: row.area,
+    phone: row.phone,
+    categories: Array.isArray(row.categories)
+      ? (row.categories as string[])
+      : [],
+    hours: (row.hours as Record<string, unknown> | null) ?? null,
+    status: row.status as LocalListingRecord["status"],
+    googleLocationId: row.googleLocationId,
+    operationId: row.operationId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const localListings = {
+  async list(tenantId: string): Promise<LocalListingRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.localListing.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toLocalListingRecord(r as LocalListingRow));
+  },
+  async get(tenantId: string, id: string): Promise<LocalListingRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.localListing.findFirst({ where: { id, tenantId } }),
+    );
+    return row ? toLocalListingRecord(row as LocalListingRow) : null;
+  },
+  async getPrimary(tenantId: string): Promise<LocalListingRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.localListing.findFirst({
+        where: { tenantId },
+        orderBy: { createdAt: "asc" },
+      }),
+    );
+    return row ? toLocalListingRecord(row as LocalListingRow) : null;
+  },
+  async create(
+    tenantId: string,
+    input: LocalListingInput,
+  ): Promise<LocalListingRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.localListing.create({
+        data: {
+          tenantId,
+          businessId: input.businessId ?? null,
+          name: input.name,
+          area: input.area,
+          phone: input.phone,
+          categories: (input.categories ?? []) as Prisma.InputJsonValue,
+          hours: (input.hours ?? undefined) as Prisma.InputJsonValue | undefined,
+          status: input.status ?? "draft",
+          googleLocationId: input.googleLocationId ?? null,
+          operationId: input.operationId ?? null,
+        },
+      }),
+    );
+    return toLocalListingRecord(row as LocalListingRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: LocalListingUpdate,
+  ): Promise<LocalListingRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.localListing.findFirst({
+        where: { id, tenantId },
+      });
+      if (!existing) throw new Error(`Listing ${id} not found for tenant`);
+      return tx.localListing.update({
+        where: { id },
+        data: {
+          name: update.name,
+          area: update.area,
+          phone: update.phone,
+          categories:
+            update.categories === undefined
+              ? undefined
+              : (update.categories as Prisma.InputJsonValue),
+          hours:
+            update.hours === undefined
+              ? undefined
+              : (update.hours as Prisma.InputJsonValue | undefined),
+          status: update.status,
+          googleLocationId: update.googleLocationId,
+          operationId: update.operationId,
+        },
+      });
+    });
+    return toLocalListingRecord(row as LocalListingRow);
+  },
+};
+
+// --- W8 WhatsApp catalog products (Prisma/Postgres) -------------------------
+
+interface ProductRow {
+  id: string;
+  tenantId: string;
+  businessId: string | null;
+  name: string;
+  description: string;
+  priceCents: bigint;
+  imageUrl: string | null;
+  available: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toProductRecord(row: ProductRow): ProductRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    businessId: row.businessId,
+    name: row.name,
+    description: row.description,
+    priceCents: row.priceCents,
+    imageUrl: row.imageUrl,
+    available: row.available,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const products = {
+  async list(tenantId: string): Promise<ProductRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.product.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toProductRecord(r as ProductRow));
+  },
+  async get(tenantId: string, id: string): Promise<ProductRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.product.findFirst({ where: { id, tenantId } }),
+    );
+    return row ? toProductRecord(row as ProductRow) : null;
+  },
+  async create(tenantId: string, input: ProductInput): Promise<ProductRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.product.create({
+        data: {
+          tenantId,
+          businessId: input.businessId ?? null,
+          name: input.name,
+          description: input.description ?? "",
+          priceCents: input.priceCents,
+          imageUrl: input.imageUrl ?? null,
+          available: input.available ?? true,
+        },
+      }),
+    );
+    return toProductRecord(row as ProductRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: ProductUpdate,
+  ): Promise<ProductRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.product.findFirst({ where: { id, tenantId } });
+      if (!existing) throw new Error(`Product ${id} not found for tenant`);
+      return tx.product.update({
+        where: { id },
+        data: {
+          name: update.name,
+          description: update.description,
+          priceCents: update.priceCents,
+          imageUrl: update.imageUrl,
+          available: update.available,
+        },
+      });
+    });
+    return toProductRecord(row as ProductRow);
+  },
+};
+
+// --- W8 WhatsApp orders (Prisma/Postgres) -----------------------------------
+
+interface WhatsappOrderRow {
+  id: string;
+  tenantId: string;
+  businessId: string | null;
+  customerContact: string;
+  items: unknown;
+  totalCents: bigint;
+  status: string;
+  paymentLinkRef: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toWhatsappOrderRecord(row: WhatsappOrderRow): WhatsappOrderRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    businessId: row.businessId,
+    customerContact: row.customerContact,
+    items: Array.isArray(row.items)
+      ? (row.items as unknown as WhatsappOrderItem[])
+      : [],
+    totalCents: row.totalCents,
+    status: row.status as WhatsappOrderRecord["status"],
+    paymentLinkRef: row.paymentLinkRef,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const whatsappOrders = {
+  async list(tenantId: string): Promise<WhatsappOrderRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.whatsappOrder.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toWhatsappOrderRecord(r as WhatsappOrderRow));
+  },
+  async get(tenantId: string, id: string): Promise<WhatsappOrderRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.whatsappOrder.findFirst({ where: { id, tenantId } }),
+    );
+    return row ? toWhatsappOrderRecord(row as WhatsappOrderRow) : null;
+  },
+  async create(
+    tenantId: string,
+    input: WhatsappOrderInput,
+  ): Promise<WhatsappOrderRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.whatsappOrder.create({
+        data: {
+          tenantId,
+          businessId: input.businessId ?? null,
+          customerContact: input.customerContact,
+          items: input.items as unknown as Prisma.InputJsonValue,
+          totalCents: input.totalCents,
+          status: input.status ?? "draft",
+          paymentLinkRef: input.paymentLinkRef ?? null,
+        },
+      }),
+    );
+    return toWhatsappOrderRecord(row as WhatsappOrderRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: WhatsappOrderUpdate,
+  ): Promise<WhatsappOrderRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.whatsappOrder.findFirst({
+        where: { id, tenantId },
+      });
+      if (!existing) throw new Error(`Order ${id} not found for tenant`);
+      return tx.whatsappOrder.update({
+        where: { id },
+        data: {
+          items:
+            update.items === undefined
+              ? undefined
+              : (update.items as unknown as Prisma.InputJsonValue),
+          totalCents: update.totalCents,
+          status: update.status,
+          paymentLinkRef: update.paymentLinkRef,
+        },
+      });
+    });
+    return toWhatsappOrderRecord(row as WhatsappOrderRow);
+  },
+};
+
 export const prismaRepositories: Repositories = {
   businesses,
   sites,
@@ -948,4 +1256,7 @@ export const prismaRepositories: Repositories = {
   wallet,
   usage,
   invoices,
+  localListings,
+  products,
+  whatsappOrders,
 };

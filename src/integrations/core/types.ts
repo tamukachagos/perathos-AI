@@ -13,7 +13,11 @@ export const STATUS = {
   PENDING: "pending", // needs more input or a guided setup step
 } as const;
 
-/** The nine provider-adapter interfaces in the framework. */
+/**
+ * The provider-adapter interfaces in the framework. W8 adds a tenth,
+ * LocalListingProvider, for Google Business Profile automation (the GBP verbs
+ * route to it the same way every other verb routes to its owning interface).
+ */
 export type ProviderInterface =
   | "DomainProvider"
   | "DnsProvider"
@@ -23,7 +27,8 @@ export type ProviderInterface =
   | "MessagingProvider"
   | "PaymentProvider"
   | "AnalyticsProvider"
-  | "AgentProvider";
+  | "AgentProvider"
+  | "LocalListingProvider";
 
 /** Input to a server-plane action verb. Payload shape is per-verb (M3/M4). */
 export interface ActionRequest {

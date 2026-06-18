@@ -32,6 +32,8 @@ import { AgentOps, AnalyticsPanel, ArchitecturePanel } from "./LowerPanels";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { DomainStep } from "./DomainStep";
+import { GbpStep } from "./GbpStep";
+import { WhatsappCommerce } from "./WhatsappCommerce";
 
 // Maps a gated checklist row to the ActionRouter verb + the payload the approval
 // binds to. Only authenticated sessions can approve (the flow needs a tenant).
@@ -406,6 +408,20 @@ export function Dashboard({
           business={business}
           authenticated={authenticated}
           canRegister={Boolean(entitlements.customDomain)}
+          onNotice={setNotice}
+        />
+
+        <GbpStep
+          business={business}
+          authenticated={authenticated}
+          canList={Boolean(entitlements.payments)}
+          onNotice={setNotice}
+        />
+
+        <WhatsappCommerce
+          business={business}
+          authenticated={authenticated}
+          canSell={Boolean(entitlements.payments)}
           onNotice={setNotice}
         />
 

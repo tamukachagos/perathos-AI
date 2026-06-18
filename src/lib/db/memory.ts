@@ -19,6 +19,12 @@ import type {
   InvoiceStatus,
   LeadInput,
   LeadRecord,
+  LocalListingInput,
+  LocalListingRecord,
+  LocalListingUpdate,
+  ProductInput,
+  ProductRecord,
+  ProductUpdate,
   Repositories,
   SiteRecord,
   SiteVersionRecord,
@@ -27,6 +33,9 @@ import type {
   UsageRecordInput,
   UsageRecordRow,
   WalletRecord,
+  WhatsappOrderInput,
+  WhatsappOrderRecord,
+  WhatsappOrderUpdate,
 } from "./types";
 import { DEV_TENANT_ID, seedBusiness, seedSite } from "./seed";
 
@@ -47,6 +56,9 @@ interface Store {
   wallets: Map<string, WalletRecord>; // keyed by tenantId
   usage: UsageRecordRow[]; // append-only across all tenants
   invoices: Map<string, InvoiceRecord>; // keyed by `${tenantId}:${period}`
+  localListings: LocalListingRecord[]; // append-only across all tenants (W8)
+  products: ProductRecord[]; // append-only across all tenants (W8)
+  whatsappOrders: WhatsappOrderRecord[]; // append-only across all tenants (W8)
   seq: number;
 }
 
@@ -92,6 +104,9 @@ function createStore(): Store {
     ]),
     usage: [],
     invoices: new Map(),
+    localListings: [],
+    products: [],
+    whatsappOrders: [],
     seq: 1,
   };
 }
@@ -597,6 +612,183 @@ const invoices = {
   },
 };
 
+// --- W8 GBP listings (mock) --------------------------------------------------
+
+const localListings = {
+  async list(tenantId: string): Promise<LocalListingRecord[]> {
+    return store()
+      .localListings.filter((l) => l.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((l) => ({ ...l, categories: [...l.categories] }));
+  },
+  async get(tenantId: string, id: string): Promise<LocalListingRecord | null> {
+    const found = store().localListings.find(
+      (l) => l.id === id && l.tenantId === tenantId,
+    );
+    return found ? { ...found, categories: [...found.categories] } : null;
+  },
+  async getPrimary(tenantId: string): Promise<LocalListingRecord | null> {
+    const found = store()
+      .localListings.filter((l) => l.tenantId === tenantId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+    return found ? { ...found, categories: [...found.categories] } : null;
+  },
+  async create(
+    tenantId: string,
+    input: LocalListingInput,
+  ): Promise<LocalListingRecord> {
+    const now = new Date().toISOString();
+    const record: LocalListingRecord = {
+      id: nextId("gbp"),
+      tenantId,
+      businessId: input.businessId ?? null,
+      name: input.name,
+      area: input.area,
+      phone: input.phone,
+      categories: input.categories ? [...input.categories] : [],
+      hours: input.hours ?? null,
+      status: input.status ?? "draft",
+      googleLocationId: input.googleLocationId ?? null,
+      operationId: input.operationId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().localListings.push(record);
+    return { ...record, categories: [...record.categories] };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: LocalListingUpdate,
+  ): Promise<LocalListingRecord> {
+    const existing = store().localListings.find(
+      (l) => l.id === id && l.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`Listing ${id} not found for tenant`);
+    if (update.name !== undefined) existing.name = update.name;
+    if (update.area !== undefined) existing.area = update.area;
+    if (update.phone !== undefined) existing.phone = update.phone;
+    if (update.categories !== undefined)
+      existing.categories = [...update.categories];
+    if (update.hours !== undefined) existing.hours = update.hours;
+    if (update.status !== undefined) existing.status = update.status;
+    if (update.googleLocationId !== undefined)
+      existing.googleLocationId = update.googleLocationId;
+    if (update.operationId !== undefined)
+      existing.operationId = update.operationId;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing, categories: [...existing.categories] };
+  },
+};
+
+// --- W8 WhatsApp catalog products (mock) ------------------------------------
+
+const products = {
+  async list(tenantId: string): Promise<ProductRecord[]> {
+    return store()
+      .products.filter((p) => p.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((p) => ({ ...p }));
+  },
+  async get(tenantId: string, id: string): Promise<ProductRecord | null> {
+    const found = store().products.find(
+      (p) => p.id === id && p.tenantId === tenantId,
+    );
+    return found ? { ...found } : null;
+  },
+  async create(tenantId: string, input: ProductInput): Promise<ProductRecord> {
+    const now = new Date().toISOString();
+    const record: ProductRecord = {
+      id: nextId("prod"),
+      tenantId,
+      businessId: input.businessId ?? null,
+      name: input.name,
+      description: input.description ?? "",
+      priceCents: input.priceCents,
+      imageUrl: input.imageUrl ?? null,
+      available: input.available ?? true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().products.push(record);
+    return { ...record };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: ProductUpdate,
+  ): Promise<ProductRecord> {
+    const existing = store().products.find(
+      (p) => p.id === id && p.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`Product ${id} not found for tenant`);
+    if (update.name !== undefined) existing.name = update.name;
+    if (update.description !== undefined) existing.description = update.description;
+    if (update.priceCents !== undefined) existing.priceCents = update.priceCents;
+    if (update.imageUrl !== undefined) existing.imageUrl = update.imageUrl;
+    if (update.available !== undefined) existing.available = update.available;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing };
+  },
+};
+
+// --- W8 WhatsApp orders (mock) ----------------------------------------------
+
+const whatsappOrders = {
+  async list(tenantId: string): Promise<WhatsappOrderRecord[]> {
+    return store()
+      .whatsappOrders.filter((o) => o.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((o) => ({ ...o, items: o.items.map((i) => ({ ...i })) }));
+  },
+  async get(tenantId: string, id: string): Promise<WhatsappOrderRecord | null> {
+    const found = store().whatsappOrders.find(
+      (o) => o.id === id && o.tenantId === tenantId,
+    );
+    return found
+      ? { ...found, items: found.items.map((i) => ({ ...i })) }
+      : null;
+  },
+  async create(
+    tenantId: string,
+    input: WhatsappOrderInput,
+  ): Promise<WhatsappOrderRecord> {
+    const now = new Date().toISOString();
+    const record: WhatsappOrderRecord = {
+      id: nextId("word"),
+      tenantId,
+      businessId: input.businessId ?? null,
+      customerContact: input.customerContact,
+      items: input.items.map((i) => ({ ...i })),
+      totalCents: input.totalCents,
+      status: input.status ?? "draft",
+      paymentLinkRef: input.paymentLinkRef ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().whatsappOrders.push(record);
+    return { ...record, items: record.items.map((i) => ({ ...i })) };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: WhatsappOrderUpdate,
+  ): Promise<WhatsappOrderRecord> {
+    const existing = store().whatsappOrders.find(
+      (o) => o.id === id && o.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`Order ${id} not found for tenant`);
+    if (update.items !== undefined)
+      existing.items = update.items.map((i) => ({ ...i }));
+    if (update.totalCents !== undefined) existing.totalCents = update.totalCents;
+    if (update.status !== undefined) existing.status = update.status;
+    if (update.paymentLinkRef !== undefined)
+      existing.paymentLinkRef = update.paymentLinkRef;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing, items: existing.items.map((i) => ({ ...i })) };
+  },
+};
+
 export const memoryRepositories: Repositories = {
   businesses,
   sites,
@@ -608,6 +800,9 @@ export const memoryRepositories: Repositories = {
   wallet,
   usage,
   invoices,
+  localListings,
+  products,
+  whatsappOrders,
 };
 
 // Exposed for tests so they can run against a fresh store.

@@ -61,6 +61,7 @@ export function multiplierForKind(kind: string): number {
   const ns = kind.split(".")[0];
   if (ns === "hosting") return hostingMarkup();
   if (ns === "domain") return domainMarkup();
+  if (ns === "whatsapp") return whatsappMarkup();
   if (ns === "llm") {
     // llm.<tier>.* — tier is the SECOND segment when present.
     const seg = kind.split(".")[1]?.toUpperCase();
@@ -92,6 +93,58 @@ export function applyMargin(unitCostMicro: bigint, multiplier: number): bigint {
  * the Paystack createCheckout path as a token_topup SKU"); mock now.
  */
 export const TOKEN_TOPUP_SKU = "token_topup";
+
+// --- W8 WhatsApp per-message pricing (Meta 2025 per-template model) ----------
+
+/**
+ * Meta's 2025 WhatsApp Business pricing moved from per-CONVERSATION to
+ * per-TEMPLATE-MESSAGE for marketing/utility/authentication, while SERVICE
+ * conversations (a business reply to a user-initiated message inside the 24-hour
+ * customer-service window) are FREE. We model exactly that here:
+ *   * "service"       → FREE (replies inside the 24h window). Cost 0.
+ *   * "utility"       → charged per delivered template message.
+ *   * "authentication"→ charged per delivered template message.
+ *   * "marketing"     → charged per delivered template message (the priciest).
+ *
+ * Prices are the WHOLESALE per-message cost in ZAR micro-cents (what the
+ * operator pays the BSP/Meta); the wallet then applies the WhatsApp markup on
+ * top. Defaults are SA-anchored placeholders, env-overridable because Meta's
+ * rate card + FX churn. They are conservative and meant to be re-priced without
+ * a deploy — never hardcoded at a call site.
+ */
+export type WhatsappMessageCategory =
+  | "service"
+  | "utility"
+  | "authentication"
+  | "marketing";
+
+/** Wholesale per-message cost (ZAR micro-cents) for a message category. */
+export function whatsappMessageCostMicro(
+  category: WhatsappMessageCategory,
+): bigint {
+  // Service replies inside the 24h window are free under Meta's 2025 model.
+  if (category === "service") return 0n;
+  const map: Record<Exclude<WhatsappMessageCategory, "service">, [string, bigint]> = {
+    // ~R0.14 / utility, ~R0.14 / auth, ~R0.50 / marketing (placeholder ZAR).
+    utility: ["LD_WA_COST_UTILITY_MICRO", 14_000n],
+    authentication: ["LD_WA_COST_AUTH_MICRO", 14_000n],
+    marketing: ["LD_WA_COST_MARKETING_MICRO", 50_000n],
+  };
+  const [envName, fallback] = map[category];
+  const raw = process.env[envName]?.trim();
+  if (!raw) return fallback;
+  try {
+    const n = BigInt(raw);
+    return n >= 0n ? n : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** The WhatsApp per-message retail markup multiplier (§8 markup pattern). */
+export function whatsappMarkup(): number {
+  return Math.max(1, envFloat("LD_MARKUP_WHATSAPP", 2.0)); // 2× on tiny absolute
+}
 
 /**
  * Format ZAR micro-cents as a display string, e.g. 1_000_000n → "R10.00".

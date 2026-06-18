@@ -62,6 +62,27 @@ export function evaluateAnalytics(): AdapterReadiness {
   return { status: STATUS.READY, detail: "Visits, leads, WhatsApp clicks, and payment clicks are tracked." };
 }
 
+// W8 — Google Business Profile readiness. The NAP (name/area/phone) is the
+// single source derived from the profile; once all three are present, listing on
+// Google is a risky verb (it creates a public, verified presence) → REVIEW.
+export function evaluateLocalListing(business: Business): AdapterReadiness {
+  const hasName = isFilled(business.name);
+  const hasArea = isFilled(business.location);
+  const hasPhone = isValidWhatsapp(business.whatsapp);
+  if (hasName && hasArea && hasPhone) {
+    return {
+      status: STATUS.REVIEW,
+      detail:
+        "Your Name, area and phone are ready to list on Google — listing needs your approval.",
+    };
+  }
+  return {
+    status: STATUS.PENDING,
+    detail:
+      "Add your business name, area, and a valid SA mobile number to list on Google.",
+  };
+}
+
 // DNS readiness mirrors the prototype's combined "Domain & DNS" gate: once a
 // domain is chosen, DNS records (delegation, A/AAAA/CNAME) wait behind approval.
 export function evaluateDns(business: Business): AdapterReadiness {

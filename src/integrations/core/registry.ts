@@ -18,6 +18,7 @@ import { messagingAdapter } from "@/integrations/messaging";
 import { paymentAdapter } from "@/integrations/payment";
 import { analyticsAdapter } from "@/integrations/analytics";
 import { agentAdapter } from "@/integrations/agent";
+import { localListingAdapter } from "@/integrations/localListing";
 
 // Re-export the client-safe checklist readiness plane so existing SERVER
 // importers of the registry keep working unchanged.
@@ -36,7 +37,7 @@ export type {
   ActionResult,
 } from "./types";
 
-/** The nine provider adapters, addressable by their interface name. */
+/** The provider adapters, addressable by their interface name. */
 export const adapterRegistry: Record<ProviderInterface, ProviderAdapter> = {
   DomainProvider: domainAdapter,
   DnsProvider: dnsAdapter,
@@ -47,6 +48,7 @@ export const adapterRegistry: Record<ProviderInterface, ProviderAdapter> = {
   PaymentProvider: paymentAdapter,
   AnalyticsProvider: analyticsAdapter,
   AgentProvider: agentAdapter,
+  LocalListingProvider: localListingAdapter,
 };
 
 export function getAdapter(interfaceName: ProviderInterface): ProviderAdapter {

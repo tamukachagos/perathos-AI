@@ -128,6 +128,51 @@ export const GATED_VERBS: Record<string, GatedVerbSpec> = {
     label: "Provision mailboxes",
     target: (p) => String(p.domain ?? ""),
   },
+  "gbp.create": {
+    // W8 (B1) — list the business on Google. Gated + ASYNC: Google verification
+    // is asynchronous, so this returns 202 + an OperationRef and settles to
+    // live/failed via the W1 op (mock: reconcile sweep; live: Google webhook).
+    // Gated on the Growth+ `payments` entitlement (GBP is a Growth+ feature).
+    // NOT metered (no per-action wallet charge) → estimate 0.
+    interfaceName: "LocalListingProvider",
+    async: true,
+    label: "List on Google",
+    target: (p) => String(p.name ?? ""),
+    requiresEntitlement: "payments",
+    estimateMicro: () => 0n,
+  },
+  "gbp.sync": {
+    // W8 (B1) — push NAP/hours/category updates to GBP. Gated + sync. Not
+    // metered.
+    interfaceName: "LocalListingProvider",
+    async: false,
+    label: "Update Google listing",
+    target: (p) => String(p.name ?? ""),
+    requiresEntitlement: "payments",
+    estimateMicro: () => 0n,
+  },
+  "whatsapp.publishCatalog": {
+    // W8 (B2) — publish the WhatsApp product catalog. Gated + sync. Not metered
+    // (the per-message charge lands on sendMessage/sendTemplate, not publish).
+    interfaceName: "MessagingProvider",
+    async: false,
+    label: "Publish WhatsApp catalog",
+    target: () => "catalog",
+    requiresEntitlement: "payments",
+    estimateMicro: () => 0n,
+  },
+  "whatsapp.createPaymentLink": {
+    // W8 (B2) — create a ZAR payment link for an order, via the PaymentProvider.
+    // Gated + sync; entitlement-checked (payments). The link creation itself is
+    // not a metered wallet charge (the payment is the customer's, not the
+    // tenant's cost) → estimate 0.
+    interfaceName: "PaymentProvider",
+    async: false,
+    label: "Create WhatsApp payment link",
+    target: (p) => String(p.orderId ?? ""),
+    requiresEntitlement: "payments",
+    estimateMicro: () => 0n,
+  },
 };
 
 export function isGatedVerb(verb: string): boolean {
@@ -496,9 +541,16 @@ function inferInterface(verb: string): ProviderInterface | null {
     github: "GitHubProvider",
     email: "EmailProvider",
     messaging: "MessagingProvider",
+    // W8: WhatsApp commerce verbs (whatsapp.sendMessage / whatsapp.sendTemplate)
+    // ride the MessagingProvider. The gated whatsapp.* verbs pin their interface
+    // in GATED_VERBS; this default-allow mapping covers the ungated, metered
+    // send verbs so a typo'd whatsapp.* verb still resolves to Messaging rather
+    // than default-denying (S9 is about UNKNOWN namespaces, not known ones).
+    whatsapp: "MessagingProvider",
     payment: "PaymentProvider",
     analytics: "AnalyticsProvider",
     agent: "AgentProvider",
+    gbp: "LocalListingProvider",
   };
   return map[ns] ?? null;
 }
