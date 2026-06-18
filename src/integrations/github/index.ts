@@ -41,6 +41,24 @@ function dispatch(request: ActionRequest): ActionResult {
         ok: true,
         detail: `[mock:GitHubProvider] commit recorded for ${repoRefForSlug(slug)}.`,
       };
+    case "github.mergePR": {
+      // W7 — merge a PR the agent team opened. Reaches here only AFTER the
+      // ActionRouter has verified the owner-minted approval token (the agent
+      // cannot self-approve). The PR url is the target.
+      const prUrl = String(payload.prUrl ?? payload.branch ?? "");
+      return {
+        ok: true,
+        detail: `[mock:GitHubProvider] merged ${prUrl || "the team's pull request"}.`,
+      };
+    }
+    case "agent.applyContent":
+      // W7 — apply an AUTO-tier content/copy swap. The change is a commit on the
+      // customer's repo (the rollback target); the deploy that follows is the
+      // gated/async agent.deployFix.
+      return {
+        ok: true,
+        detail: `[mock:GitHubProvider] content update applied for ${repoRefForSlug(slug)}.`,
+      };
     default:
       return { ok: false, detail: `Unsupported github verb "${request.verb}".` };
   }

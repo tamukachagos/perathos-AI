@@ -13,7 +13,8 @@ export type FeatureKey =
   | "customDomain"
   | "removeBranding"
   | "payments"
-  | "prioritySupport";
+  | "prioritySupport"
+  | "agentTeam";
 
 /** User-facing rationale for each gated feature. */
 export const FEATURE_MESSAGE: Record<FeatureKey, string> = {
@@ -23,6 +24,8 @@ export const FEATURE_MESSAGE: Record<FeatureKey, string> = {
     'Removing the "Powered by Launch Desk" badge requires the Growth plan or higher.',
   payments: "Collecting payments requires the Growth plan or higher.",
   prioritySupport: "Priority support is available on the Pro plan.",
+  agentTeam:
+    "Your always-on AI team (automatic fixes, updates, and security) is available on the Pro plan.",
 };
 
 export class EntitlementError extends Error {

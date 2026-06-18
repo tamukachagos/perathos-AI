@@ -125,6 +125,8 @@ model Tenant {
   whatsappOrders      WhatsappOrder[]
   siteRepos           SiteRepo[]
   deployments         Deployment[]
+  agentJobs           AgentJob[]
+  agentPolicy         AgentPolicy?
 
   @@map("tenants")
 }
@@ -785,4 +787,92 @@ model Deployment {
   @@index([operationId])
   @@index([providerDeploymentId])
   @@map("deployments")
+}
+
+// ---------------------------------------------------------------------------
+// W7 — The customer agent team (ENTERPRISE_REVIEW Part 7 / Part 3.C).
+//
+// The agent team is an ORCHESTRATOR over the existing nine adapters + the one
+// ActionRouter — NOT a tenth adapter that can do what it wants. It adds only:
+// roles + a job queue (AgentJob) + a per-tenant policy/kill-switch (AgentPolicy);
+// metering reuses UsageRecord/TokenWallet (W2). Agents hold ZERO raw credentials
+// and ZERO direct push/deploy power; risky actions go through three new gated
+// verbs, and the agent NEVER mints its own approval token (an enforced invariant).
+//
+// Both tables are tenant-owned -> RLS (ENABLE + FORCE + tenant_isolation), the
+// same backstop as every other tenant table. Only the Prisma impl touches them
+// (DATABASE_URL real); in mock mode the in-memory repo is used. No raw code/diffs/
+// secrets live here — code lives in the customer's GitHub repo; payloads are
+// referenced by hash (inputRef/resultRef) so they stay token-bindable.
+// ---------------------------------------------------------------------------
+
+// The lifecycle of one agent job in the DAG. `awaiting_approval` is the state a
+// risky job sits in until the OWNER approves (the agent cannot self-approve);
+// `blocked` is the hard halt when the spend cap / wallet cannot cover the next
+// step, or the tenant is paused.
+enum AgentJobStatus {
+  queued
+  running
+  awaiting_approval
+  done
+  failed
+  blocked
+}
+
+// One job in the bounded DAG the Conductor decomposes a trigger into. `role`
+// is the agent role (ci_medic / builder / bug_hunter / security_sentinel /
+// reviewer / conductor); `trigger` is what spawned the run; `riskTier` maps the
+// output to who approves (auto / review / escalate). `parentJobId` forms the DAG
+// (no self-loops). `inputRef`/`resultRef` are content hashes/refs (never raw
+// code). `prUrl` is the fix/feature PR the job produced. `costMicro` is the
+// wallet draw attributed to this job (ZAR micro-cents, BigInt).
+model AgentJob {
+  id           String         @id @default(cuid())
+  tenantId     String
+  role         String
+  trigger      String
+  status       AgentJobStatus @default(queued)
+  // auto | review | escalate (server-side enum; the role's output maps to one).
+  riskTier     String         @default("review")
+  // Content-addressed reference to the job input (e.g. a hashed error log /
+  // request), never the raw untrusted text.
+  inputRef     String?
+  // Reference to the job result (e.g. a mock fix ref / verdict), never raw code.
+  resultRef    String?
+  // The PR the job opened (agents open PRs, never push direct).
+  prUrl        String?
+  // DAG edge: the parent job this one was decomposed from (null for the root).
+  parentJobId  String?
+  // Wallet draw attributed to this job, ZAR micro-cents.
+  costMicro    BigInt         @default(0)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([parentJobId])
+  @@map("agent_jobs")
+}
+
+// One policy row per tenant (the kill switch + auto-approve toggle + spend cap).
+// `pausedByOwner` halts ALL the tenant's jobs immediately. `autoApproveContent`
+// lets AUTO-tier content/copy swaps land without an owner tap. `monthlySpendCapMicro`
+// is the hard agent-spend ceiling enforced as a pre-flight between every step
+// (in addition to the W2 wallet balance).
+model AgentPolicy {
+  id                   String   @id @default(cuid())
+  tenantId             String   @unique
+  pausedByOwner        Boolean  @default(false)
+  autoApproveContent   Boolean  @default(true)
+  // ZAR micro-cents. 0 = "use the wallet balance as the only ceiling".
+  monthlySpendCapMicro BigInt   @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("agent_policies")
 }

@@ -16,24 +16,29 @@ describe("entitlementsFor — per-plan capability resolution", () => {
     expect(e.removeBranding).toBe(false);
     expect(e.payments).toBe(false);
     expect(e.prioritySupport).toBe(false);
+    expect(e.agentTeam).toBe(false);
   });
 
-  it("Growth: custom domain, branding removed, payments — single site", () => {
+  it("Growth: custom domain, branding removed, payments — single site, no agent team", () => {
     const e = entitlementsFor("growth");
     expect(e.maxSites).toBe(1);
     expect(e.customDomain).toBe(true);
     expect(e.removeBranding).toBe(true);
     expect(e.payments).toBe(true);
     expect(e.prioritySupport).toBe(false);
+    // W7: the agent team is Pro-only — Growth does NOT include it.
+    expect(e.agentTeam).toBe(false);
   });
 
-  it("Pro: multi-site + priority + everything Growth has", () => {
+  it("Pro: multi-site + priority + agent team + everything Growth has", () => {
     const e = entitlementsFor("pro");
     expect(e.maxSites).toBeGreaterThan(1);
     expect(e.customDomain).toBe(true);
     expect(e.removeBranding).toBe(true);
     expect(e.payments).toBe(true);
     expect(e.prioritySupport).toBe(true);
+    // W7: the always-on agent team is bundled on Pro (and Managed later).
+    expect(e.agentTeam).toBe(true);
   });
 
   it("unknown / null / undefined resolves to the default (Free) entitlements", () => {

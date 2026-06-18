@@ -87,6 +87,7 @@ const FREE_ENTITLEMENTS: Entitlements = {
   removeBranding: false,
   payments: false,
   prioritySupport: false,
+  agentTeam: false,
 };
 
 export function Dashboard({
@@ -312,6 +313,15 @@ export function Dashboard({
                 <span className="credits-chip-bar" aria-hidden="true">
                   <span style={{ width: `${creditsUsagePercent}%` }} />
                 </span>
+              </Link>
+            ) : null}
+            {authenticated && entitlements.agentTeam ? (
+              <Link
+                className="ghost-button"
+                href="/agent"
+                title="Your always-on AI team"
+              >
+                AI team
               </Link>
             ) : null}
             <Link className="ghost-button" href="/pricing">

@@ -8,6 +8,12 @@ import type { Business, PublishedSite } from "@/lib/types";
 import type {
   AdapterConnectionInput,
   AdapterConnectionRecord,
+  AgentJobInput,
+  AgentJobRecord,
+  AgentJobStatus,
+  AgentJobUpdate,
+  AgentPolicyRecord,
+  AgentPolicyUpdate,
   AuditEntry,
   AuditInput,
   BusinessRecord,
@@ -67,6 +73,8 @@ interface Store {
   whatsappOrders: WhatsappOrderRecord[]; // append-only across all tenants (W8)
   siteRepos: SiteRepoRecord[]; // append-only across all tenants (W6)
   deployments: DeploymentRecord[]; // append-only across all tenants (W6)
+  agentJobs: AgentJobRecord[]; // append-only across all tenants (W7)
+  agentPolicies: Map<string, AgentPolicyRecord>; // keyed by tenantId (W7)
   seq: number;
 }
 
@@ -117,6 +125,8 @@ function createStore(): Store {
     whatsappOrders: [],
     siteRepos: [],
     deployments: [],
+    agentJobs: [],
+    agentPolicies: new Map(),
     seq: 1,
   };
 }
@@ -859,6 +869,14 @@ const siteRepos = {
     existing.updatedAt = new Date().toISOString();
     return { ...existing };
   },
+  async resolveByRepoRef(
+    repoRef: string,
+  ): Promise<{ tenantId: string; slug: string } | null> {
+    // Cross-tenant (no session) — the GitHub webhook resolver. Single process in
+    // mock mode; Postgres routes through a SECURITY DEFINER fn.
+    const found = store().siteRepos.find((r) => r.repoRef === repoRef);
+    return found ? { tenantId: found.tenantId, slug: found.slug } : null;
+  },
 };
 
 const deployments = {
@@ -950,6 +968,115 @@ const deployments = {
   },
 };
 
+// --- W7 agent jobs + policy (mock) ------------------------------------------
+
+const agentJobs = {
+  async list(tenantId: string): Promise<AgentJobRecord[]> {
+    return store()
+      .agentJobs.filter((j) => j.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((j) => ({ ...j }));
+  },
+  async listRecent(tenantId: string, limit = 20): Promise<AgentJobRecord[]> {
+    return (await this.list(tenantId)).slice(0, limit);
+  },
+  async get(tenantId: string, id: string): Promise<AgentJobRecord | null> {
+    const found = store().agentJobs.find(
+      (j) => j.id === id && j.tenantId === tenantId,
+    );
+    return found ? { ...found } : null;
+  },
+  async listByStatus(
+    tenantId: string,
+    status: AgentJobStatus,
+  ): Promise<AgentJobRecord[]> {
+    return store()
+      .agentJobs.filter((j) => j.tenantId === tenantId && j.status === status)
+      // FIFO for the queue processor: oldest queued first.
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((j) => ({ ...j }));
+  },
+  async create(tenantId: string, input: AgentJobInput): Promise<AgentJobRecord> {
+    const now = new Date().toISOString();
+    const record: AgentJobRecord = {
+      id: nextId("ajob"),
+      tenantId,
+      role: input.role,
+      trigger: input.trigger,
+      status: input.status ?? "queued",
+      riskTier: input.riskTier ?? "review",
+      inputRef: input.inputRef ?? null,
+      resultRef: input.resultRef ?? null,
+      prUrl: input.prUrl ?? null,
+      parentJobId: input.parentJobId ?? null,
+      costMicro: input.costMicro ?? 0n,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().agentJobs.push(record);
+    return { ...record };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: AgentJobUpdate,
+  ): Promise<AgentJobRecord> {
+    const existing = store().agentJobs.find(
+      (j) => j.id === id && j.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`AgentJob ${id} not found for tenant`);
+    if (update.status !== undefined) existing.status = update.status;
+    if (update.riskTier !== undefined) existing.riskTier = update.riskTier;
+    if (update.resultRef !== undefined) existing.resultRef = update.resultRef;
+    if (update.prUrl !== undefined) existing.prUrl = update.prUrl;
+    if (update.costMicro !== undefined) existing.costMicro = update.costMicro;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing };
+  },
+};
+
+function defaultPolicy(tenantId: string): AgentPolicyRecord {
+  const now = new Date().toISOString();
+  return {
+    id: `apol_${tenantId}`,
+    tenantId,
+    pausedByOwner: false,
+    autoApproveContent: true,
+    monthlySpendCapMicro: 0n,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+const agentPolicies = {
+  async get(tenantId: string): Promise<AgentPolicyRecord> {
+    const s = store();
+    let policy = s.agentPolicies.get(tenantId);
+    if (!policy) {
+      policy = defaultPolicy(tenantId);
+      s.agentPolicies.set(tenantId, policy);
+    }
+    return { ...policy };
+  },
+  async update(
+    tenantId: string,
+    update: AgentPolicyUpdate,
+  ): Promise<AgentPolicyRecord> {
+    const current = await this.get(tenantId);
+    const next: AgentPolicyRecord = {
+      ...current,
+      pausedByOwner: update.pausedByOwner ?? current.pausedByOwner,
+      autoApproveContent:
+        update.autoApproveContent ?? current.autoApproveContent,
+      monthlySpendCapMicro:
+        update.monthlySpendCapMicro ?? current.monthlySpendCapMicro,
+      updatedAt: new Date().toISOString(),
+    };
+    store().agentPolicies.set(tenantId, next);
+    return { ...next };
+  },
+};
+
 export const memoryRepositories: Repositories = {
   businesses,
   sites,
@@ -966,6 +1093,8 @@ export const memoryRepositories: Repositories = {
   whatsappOrders,
   siteRepos,
   deployments,
+  agentJobs,
+  agentPolicies,
 };
 
 // Exposed for tests so they can run against a fresh store.

@@ -9,6 +9,14 @@ import type { Business, PublishedSite } from "@/lib/types";
 import type {
   AdapterConnectionInput,
   AdapterConnectionRecord,
+  AgentJobInput,
+  AgentJobRecord,
+  AgentJobStatus,
+  AgentJobUpdate,
+  AgentPolicyRecord,
+  AgentPolicyUpdate,
+  AgentRiskTier,
+  AgentRole,
   AuditEntry,
   AuditInput,
   BusinessRecord,
@@ -1341,6 +1349,17 @@ const siteRepos = {
     });
     return toSiteRepoRecord(row as SiteRepoRow);
   },
+  async resolveByRepoRef(
+    repoRef: string,
+  ): Promise<{ tenantId: string; slug: string } | null> {
+    // Cross-tenant (no session): the signed GitHub webhook resolves the owning
+    // tenant + slug via the SECURITY DEFINER function, then enters
+    // withTenant(tenantId) to enqueue the CI Medic job. W1/W6 pattern.
+    const rows = await prisma.$queryRaw<{ tenantId: string; slug: string }[]>`
+      SELECT "tenantId", "slug" FROM site_repo_owner_by_repo_ref(${repoRef})`;
+    const row = rows[0];
+    return row ? { tenantId: row.tenantId, slug: row.slug } : null;
+  },
 };
 
 interface DeploymentRow {
@@ -1475,6 +1494,180 @@ const deployments = {
   },
 };
 
+// --- W7 agent jobs + policy --------------------------------------------------
+
+interface AgentJobRow {
+  id: string;
+  tenantId: string;
+  role: string;
+  trigger: string;
+  status: string;
+  riskTier: string;
+  inputRef: string | null;
+  resultRef: string | null;
+  prUrl: string | null;
+  parentJobId: string | null;
+  costMicro: bigint;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toAgentJobRecord(row: AgentJobRow): AgentJobRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    role: row.role as AgentRole,
+    trigger: row.trigger,
+    status: row.status as AgentJobStatus,
+    riskTier: row.riskTier as AgentRiskTier,
+    inputRef: row.inputRef,
+    resultRef: row.resultRef,
+    prUrl: row.prUrl,
+    parentJobId: row.parentJobId,
+    costMicro: row.costMicro,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const agentJobs = {
+  async list(tenantId: string): Promise<AgentJobRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.agentJob.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toAgentJobRecord(r as AgentJobRow));
+  },
+  async listRecent(tenantId: string, limit = 20): Promise<AgentJobRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.agentJob.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+      }),
+    );
+    return rows.map((r) => toAgentJobRecord(r as AgentJobRow));
+  },
+  async get(tenantId: string, id: string): Promise<AgentJobRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.agentJob.findFirst({ where: { id, tenantId } }),
+    );
+    return row ? toAgentJobRecord(row as AgentJobRow) : null;
+  },
+  async listByStatus(
+    tenantId: string,
+    status: AgentJobStatus,
+  ): Promise<AgentJobRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.agentJob.findMany({
+        where: { tenantId, status },
+        // FIFO for the queue processor: oldest first.
+        orderBy: { createdAt: "asc" },
+      }),
+    );
+    return rows.map((r) => toAgentJobRecord(r as AgentJobRow));
+  },
+  async create(tenantId: string, input: AgentJobInput): Promise<AgentJobRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.agentJob.create({
+        data: {
+          tenantId,
+          role: input.role,
+          trigger: input.trigger,
+          status: input.status ?? "queued",
+          riskTier: input.riskTier ?? "review",
+          inputRef: input.inputRef ?? null,
+          resultRef: input.resultRef ?? null,
+          prUrl: input.prUrl ?? null,
+          parentJobId: input.parentJobId ?? null,
+          costMicro: input.costMicro ?? 0n,
+        },
+      }),
+    );
+    return toAgentJobRecord(row as AgentJobRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: AgentJobUpdate,
+  ): Promise<AgentJobRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.agentJob.findFirst({ where: { id, tenantId } });
+      if (!existing) throw new Error(`AgentJob ${id} not found for tenant`);
+      return tx.agentJob.update({
+        where: { id },
+        data: {
+          status: update.status,
+          riskTier: update.riskTier,
+          resultRef: update.resultRef,
+          prUrl: update.prUrl,
+          costMicro: update.costMicro,
+        },
+      });
+    });
+    return toAgentJobRecord(row as AgentJobRow);
+  },
+};
+
+interface AgentPolicyRow {
+  id: string;
+  tenantId: string;
+  pausedByOwner: boolean;
+  autoApproveContent: boolean;
+  monthlySpendCapMicro: bigint;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toAgentPolicyRecord(row: AgentPolicyRow): AgentPolicyRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    pausedByOwner: row.pausedByOwner,
+    autoApproveContent: row.autoApproveContent,
+    monthlySpendCapMicro: row.monthlySpendCapMicro,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const agentPolicies = {
+  async get(tenantId: string): Promise<AgentPolicyRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.agentPolicy.upsert({
+        where: { tenantId },
+        create: { tenantId },
+        update: {},
+      }),
+    );
+    return toAgentPolicyRecord(row as AgentPolicyRow);
+  },
+  async update(
+    tenantId: string,
+    update: AgentPolicyUpdate,
+  ): Promise<AgentPolicyRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.agentPolicy.upsert({
+        where: { tenantId },
+        create: {
+          tenantId,
+          pausedByOwner: update.pausedByOwner ?? false,
+          autoApproveContent: update.autoApproveContent ?? true,
+          monthlySpendCapMicro: update.monthlySpendCapMicro ?? 0n,
+        },
+        update: {
+          pausedByOwner: update.pausedByOwner,
+          autoApproveContent: update.autoApproveContent,
+          monthlySpendCapMicro: update.monthlySpendCapMicro,
+        },
+      }),
+    );
+    return toAgentPolicyRecord(row as AgentPolicyRow);
+  },
+};
+
 export const prismaRepositories: Repositories = {
   businesses,
   sites,
@@ -1491,4 +1684,6 @@ export const prismaRepositories: Repositories = {
   whatsappOrders,
   siteRepos,
   deployments,
+  agentJobs,
+  agentPolicies,
 };

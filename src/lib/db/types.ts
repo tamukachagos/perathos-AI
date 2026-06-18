@@ -737,6 +737,18 @@ export interface SiteRepoRepository {
     id: string,
     update: SiteRepoUpdate,
   ): Promise<SiteRepoRecord>;
+  /**
+   * Resolve the owning {tenantId, slug} for an operator-side repoRef
+   * (e.g. "launchdesk-sites/joes-shop"), ACROSS tenants. The signed GitHub
+   * webhook (workflow_run failure → CI Medic) has NO session, so it correlates an
+   * inbound event to the owning tenant via this resolver. Under Postgres FORCE
+   * RLS it routes through a tightly-scoped SECURITY DEFINER function (the W1/W6
+   * pattern); the webhook then enters withTenant(tenantId) to enqueue the job.
+   * Returns null when unknown.
+   */
+  resolveByRepoRef(
+    repoRef: string,
+  ): Promise<{ tenantId: string; slug: string } | null>;
 }
 
 export interface DeploymentRepository {
@@ -776,6 +788,132 @@ export interface DeploymentRepository {
   ): Promise<{ tenantId: string; deploymentId: string } | null>;
 }
 
+// --- W7 agent team ----------------------------------------------------------
+
+/**
+ * The lifecycle of one agent job in the DAG. `awaiting_approval` is where a risky
+ * job sits until the OWNER approves (the agent cannot self-approve); `blocked` is
+ * the hard halt when the spend cap / wallet cannot cover the next step, or the
+ * tenant is paused.
+ */
+export type AgentJobStatus =
+  | "queued"
+  | "running"
+  | "awaiting_approval"
+  | "done"
+  | "failed"
+  | "blocked";
+
+/** The six agent roles + the Conductor. A typed vocabulary so a role is closed. */
+export type AgentRole =
+  | "conductor"
+  | "ci_medic"
+  | "builder"
+  | "bug_hunter"
+  | "security_sentinel"
+  | "reviewer";
+
+/** Risk tiering (Part 3.C): maps a job's output to WHO approves it. */
+export type AgentRiskTier = "auto" | "review" | "escalate";
+
+/**
+ * One job in the bounded DAG the Conductor decomposes a trigger into. No raw
+ * code/diffs/secrets live here — `inputRef`/`resultRef` are content REFERENCES
+ * (hashes), `prUrl` is the PR the job opened, `costMicro` (BigInt micro-cents) is
+ * the wallet draw attributed to this job, `parentJobId` is the DAG edge.
+ */
+export interface AgentJobRecord {
+  id: string;
+  tenantId: string;
+  role: AgentRole;
+  trigger: string;
+  status: AgentJobStatus;
+  riskTier: AgentRiskTier;
+  inputRef: string | null;
+  resultRef: string | null;
+  prUrl: string | null;
+  parentJobId: string | null;
+  costMicro: bigint;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Fields settable when creating an agent job (the Conductor builds these). */
+export interface AgentJobInput {
+  role: AgentRole;
+  trigger: string;
+  status?: AgentJobStatus;
+  riskTier?: AgentRiskTier;
+  inputRef?: string | null;
+  resultRef?: string | null;
+  prUrl?: string | null;
+  parentJobId?: string | null;
+  costMicro?: bigint;
+}
+
+/** Fields settable when updating an agent job (status/result on processing). */
+export interface AgentJobUpdate {
+  status?: AgentJobStatus;
+  riskTier?: AgentRiskTier;
+  resultRef?: string | null;
+  prUrl?: string | null;
+  costMicro?: bigint;
+}
+
+/**
+ * A tenant's agent policy (one per tenant). `pausedByOwner` is the kill switch
+ * (halts ALL the tenant's jobs immediately); `autoApproveContent` lets AUTO-tier
+ * content swaps land without an owner tap; `monthlySpendCapMicro` is the hard
+ * agent-spend ceiling (ZAR micro-cents; 0 = wallet balance is the only ceiling).
+ */
+export interface AgentPolicyRecord {
+  id: string;
+  tenantId: string;
+  pausedByOwner: boolean;
+  autoApproveContent: boolean;
+  monthlySpendCapMicro: bigint;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentPolicyUpdate {
+  pausedByOwner?: boolean;
+  autoApproveContent?: boolean;
+  monthlySpendCapMicro?: bigint;
+}
+
+export interface AgentJobRepository {
+  /** All jobs owned by a tenant (newest first). */
+  list(tenantId: string): Promise<AgentJobRecord[]>;
+  /** A tenant's most recent jobs (newest first). */
+  listRecent(tenantId: string, limit?: number): Promise<AgentJobRecord[]>;
+  /** Read a job by id, tenant-scoped (null if not this tenant's). */
+  get(tenantId: string, id: string): Promise<AgentJobRecord | null>;
+  /** Jobs in a given status (e.g. "queued" for the queue processor). */
+  listByStatus(
+    tenantId: string,
+    status: AgentJobStatus,
+  ): Promise<AgentJobRecord[]>;
+  /** Create a tenant-owned job (bound to tenantId here). */
+  create(tenantId: string, input: AgentJobInput): Promise<AgentJobRecord>;
+  /** Update mutable fields (status/result/cost), tenant-scoped. */
+  update(
+    tenantId: string,
+    id: string,
+    update: AgentJobUpdate,
+  ): Promise<AgentJobRecord>;
+}
+
+export interface AgentPolicyRepository {
+  /** The tenant's policy, creating the default row on first read if absent. */
+  get(tenantId: string): Promise<AgentPolicyRecord>;
+  /** Update the policy (kill switch / auto-approve / spend cap), tenant-scoped. */
+  update(
+    tenantId: string,
+    update: AgentPolicyUpdate,
+  ): Promise<AgentPolicyRecord>;
+}
+
 /** The full data-access surface, assembled by the factory. */
 export interface Repositories {
   businesses: BusinessRepository;
@@ -793,4 +931,6 @@ export interface Repositories {
   whatsappOrders: WhatsappOrderRepository;
   siteRepos: SiteRepoRepository;
   deployments: DeploymentRepository;
+  agentJobs: AgentJobRepository;
+  agentPolicies: AgentPolicyRepository;
 }

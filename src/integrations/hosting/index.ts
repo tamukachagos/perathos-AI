@@ -35,8 +35,11 @@ function dispatch(request: ActionRequest): ActionResult {
         detail: `[mock:HostingProvider] "${slug}" published.`,
       };
     case "hosting.deploy":
+    case "agent.deployFix":
       // Async: returning ok leaves the W1 op pending; the Vercel webhook (mock:
       // reconcile sweep) settles it to live. operationRef is informational.
+      // W7 agent.deployFix rides the same StaticTier deploy plane as a manual
+      // hosting.deploy — a deploy is a deploy regardless of who proposed it.
       return {
         ok: true,
         detail: `[mock:HostingProvider] deploy queued on Vercel project ${vercelProjectForSlug(slug)}.`,

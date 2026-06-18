@@ -25,6 +25,13 @@ export interface Entitlements {
   payments: boolean;
   /** Priority support + advanced (multi-site management, etc.). */
   prioritySupport: boolean;
+  /**
+   * W7 — the autonomous customer agent team (Conductor + roles). Gates the three
+   * agent-only ActionRouter verbs (github.mergePR / agent.deployFix /
+   * agent.applyContent) AND the owner-facing agent panel. Pro/Managed only; the
+   * work is metered against the wallet so it is naturally budget-bounded.
+   */
+  agentTeam: boolean;
 }
 
 /** A tier in the pricing catalog. Amounts are in ZAR cents (0 = free). */
@@ -64,6 +71,7 @@ export const PLAN_CATALOG: Record<PlanId, Plan> = {
       removeBranding: false,
       payments: false,
       prioritySupport: false,
+      agentTeam: false,
     },
   },
   growth: {
@@ -84,6 +92,7 @@ export const PLAN_CATALOG: Record<PlanId, Plan> = {
       removeBranding: true,
       payments: true,
       prioritySupport: false,
+      agentTeam: false,
     },
   },
   pro: {
@@ -96,7 +105,7 @@ export const PLAN_CATALOG: Record<PlanId, Plan> = {
       "Up to 10 published sites",
       "Everything in Growth",
       "Priority support",
-      "Advanced multi-site management",
+      "Your always-on AI team (fixes, updates, security)",
     ],
     entitlements: {
       maxSites: 10,
@@ -104,6 +113,7 @@ export const PLAN_CATALOG: Record<PlanId, Plan> = {
       removeBranding: true,
       payments: true,
       prioritySupport: true,
+      agentTeam: true,
     },
   },
 };

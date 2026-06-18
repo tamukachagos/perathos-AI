@@ -167,6 +167,43 @@ export const GATED_VERBS: Record<string, GatedVerbSpec> = {
     requiresEntitlement: "payments",
     estimateMicro: () => 0n,
   },
+  "github.mergePR": {
+    // W7 — merge a PR the agent team opened, AFTER the Reviewer + CI gates and
+    // (for REVIEW/ESCALATE tiers) the owner's approval. Gated + sync, under the
+    // `agentTeam` entitlement. The agent NEVER mints the token for this — only
+    // the owner-facing approval endpoint does (the never-self-approve invariant).
+    // Not a per-action wallet charge (the agent run was metered) → estimate 0.
+    interfaceName: "GitHubProvider",
+    async: false,
+    label: "Merge the team's pull request",
+    target: (p) => String(p.prUrl ?? p.branch ?? ""),
+    requiresEntitlement: "agentTeam",
+    estimateMicro: () => 0n,
+  },
+  "agent.deployFix": {
+    // W7 — deploy a merged agent fix. Gated + ASYNC (like hosting.deploy): starts
+    // a W1 op and returns 202; the Vercel webhook settles it, and a failed
+    // post-deploy health check rolls back via currentVersionId. Under the
+    // `agentTeam` entitlement. Static hosting is plan-included → estimate 0.
+    interfaceName: "HostingProvider",
+    async: true,
+    label: "Deploy the team's fix",
+    target: (p) => String(p.slug ?? ""),
+    requiresEntitlement: "agentTeam",
+    estimateMicro: () => 0n,
+  },
+  "agent.applyContent": {
+    // W7 — apply an AUTO-tier content/copy swap the team produced. Gated + sync,
+    // under the `agentTeam` entitlement. For an AUTO-tier change the owner-facing
+    // approval is auto-issued (autoApproveContent) but STILL minted by the owner
+    // endpoint, never by the agent. Content swaps are plan-included → estimate 0.
+    interfaceName: "GitHubProvider",
+    async: false,
+    label: "Apply a content update",
+    target: (p) => String(p.slug ?? ""),
+    requiresEntitlement: "agentTeam",
+    estimateMicro: () => 0n,
+  },
   "whatsapp.createPaymentLink": {
     // W8 (B2) — create a ZAR payment link for an order, via the PaymentProvider.
     // Gated + sync; entitlement-checked (payments). The link creation itself is
