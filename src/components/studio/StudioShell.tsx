@@ -374,6 +374,21 @@ export function StudioShell({
               )}
             </Link>
           )}
+          <p
+            className="studio-build-stamp"
+            title={`Build ${process.env.LD_BUILD_SHA ?? "dev"}${
+              process.env.LD_BUILD_TIME ? ` · ${process.env.LD_BUILD_TIME}` : ""
+            }`}
+            style={{
+              margin: "10px 0 0",
+              fontSize: "10px",
+              lineHeight: 1,
+              textAlign: "center",
+              color: "rgba(255,255,255,0.35)",
+            }}
+          >
+            build {(process.env.LD_BUILD_SHA ?? "dev").slice(0, 7)}
+          </p>
         </div>
       </aside>
 
