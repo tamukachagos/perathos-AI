@@ -12,6 +12,9 @@ import type {
   AuditInput,
   BusinessRecord,
   DebitResult,
+  DeploymentInput,
+  DeploymentRecord,
+  DeploymentUpdate,
   DomainInput,
   DomainRecord,
   DomainUpdate,
@@ -27,6 +30,9 @@ import type {
   ProductUpdate,
   Repositories,
   SiteRecord,
+  SiteRepoInput,
+  SiteRepoRecord,
+  SiteRepoUpdate,
   SiteVersionRecord,
   SubscriptionInput,
   SubscriptionRecord,
@@ -59,6 +65,8 @@ interface Store {
   localListings: LocalListingRecord[]; // append-only across all tenants (W8)
   products: ProductRecord[]; // append-only across all tenants (W8)
   whatsappOrders: WhatsappOrderRecord[]; // append-only across all tenants (W8)
+  siteRepos: SiteRepoRecord[]; // append-only across all tenants (W6)
+  deployments: DeploymentRecord[]; // append-only across all tenants (W6)
   seq: number;
 }
 
@@ -107,6 +115,8 @@ function createStore(): Store {
     localListings: [],
     products: [],
     whatsappOrders: [],
+    siteRepos: [],
+    deployments: [],
     seq: 1,
   };
 }
@@ -789,6 +799,157 @@ const whatsappOrders = {
   },
 };
 
+// --- W6 GitHub repos + Vercel deployments (mock) ----------------------------
+
+const siteRepos = {
+  async list(tenantId: string): Promise<SiteRepoRecord[]> {
+    return store()
+      .siteRepos.filter((r) => r.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((r) => ({ ...r }));
+  },
+  async getBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<SiteRepoRecord | null> {
+    const found = store().siteRepos.find(
+      (r) => r.tenantId === tenantId && r.slug === slug,
+    );
+    return found ? { ...found } : null;
+  },
+  async ensure(
+    tenantId: string,
+    input: SiteRepoInput,
+  ): Promise<SiteRepoRecord> {
+    // Idempotent on (tenant, slug): one repo per customer site.
+    const existing = store().siteRepos.find(
+      (r) => r.tenantId === tenantId && r.slug === input.slug,
+    );
+    if (existing) return { ...existing };
+    const now = new Date().toISOString();
+    const record: SiteRepoRecord = {
+      id: nextId("repo"),
+      tenantId,
+      slug: input.slug,
+      repoRef: input.repoRef,
+      repoUrl: input.repoUrl,
+      defaultBranch: input.defaultBranch ?? "main",
+      lastCommitSha: input.lastCommitSha ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().siteRepos.push(record);
+    return { ...record };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: SiteRepoUpdate,
+  ): Promise<SiteRepoRecord> {
+    const existing = store().siteRepos.find(
+      (r) => r.id === id && r.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`SiteRepo ${id} not found for tenant`);
+    if (update.repoRef !== undefined) existing.repoRef = update.repoRef;
+    if (update.repoUrl !== undefined) existing.repoUrl = update.repoUrl;
+    if (update.defaultBranch !== undefined)
+      existing.defaultBranch = update.defaultBranch;
+    if (update.lastCommitSha !== undefined)
+      existing.lastCommitSha = update.lastCommitSha;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing };
+  },
+};
+
+const deployments = {
+  async list(tenantId: string): Promise<DeploymentRecord[]> {
+    return store()
+      .deployments.filter((d) => d.tenantId === tenantId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((d) => ({ ...d }));
+  },
+  async listBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<DeploymentRecord[]> {
+    return store()
+      .deployments.filter((d) => d.tenantId === tenantId && d.slug === slug)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((d) => ({ ...d }));
+  },
+  async getLatestBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<DeploymentRecord | null> {
+    const list = await this.listBySlug(tenantId, slug);
+    return list[0] ?? null;
+  },
+  async get(tenantId: string, id: string): Promise<DeploymentRecord | null> {
+    const found = store().deployments.find(
+      (d) => d.id === id && d.tenantId === tenantId,
+    );
+    return found ? { ...found } : null;
+  },
+  async create(
+    tenantId: string,
+    input: DeploymentInput,
+  ): Promise<DeploymentRecord> {
+    const now = new Date().toISOString();
+    const record: DeploymentRecord = {
+      id: nextId("dep"),
+      tenantId,
+      slug: input.slug,
+      target: input.target ?? "static",
+      status: input.status ?? "queued",
+      url: input.url ?? null,
+      operationId: input.operationId ?? null,
+      version: input.version ?? null,
+      providerDeploymentId: input.providerDeploymentId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    };
+    store().deployments.push(record);
+    return { ...record };
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: DeploymentUpdate,
+  ): Promise<DeploymentRecord> {
+    const existing = store().deployments.find(
+      (d) => d.id === id && d.tenantId === tenantId,
+    );
+    if (!existing) throw new Error(`Deployment ${id} not found for tenant`);
+    if (update.status !== undefined) existing.status = update.status;
+    if (update.url !== undefined) existing.url = update.url;
+    if (update.operationId !== undefined)
+      existing.operationId = update.operationId;
+    if (update.providerDeploymentId !== undefined)
+      existing.providerDeploymentId = update.providerDeploymentId;
+    existing.updatedAt = new Date().toISOString();
+    return { ...existing };
+  },
+  async getByOperationId(
+    tenantId: string,
+    operationId: string,
+  ): Promise<DeploymentRecord | null> {
+    const found = store().deployments.find(
+      (d) => d.tenantId === tenantId && d.operationId === operationId,
+    );
+    return found ? { ...found } : null;
+  },
+  async resolveByProviderDeploymentId(
+    providerDeploymentId: string,
+  ): Promise<{ tenantId: string; deploymentId: string } | null> {
+    // Cross-tenant (no session) — the webhook resolver. In mock mode a scan is
+    // safe (single process); Postgres routes through a SECURITY DEFINER fn.
+    const found = store().deployments.find(
+      (d) => d.providerDeploymentId === providerDeploymentId,
+    );
+    return found ? { tenantId: found.tenantId, deploymentId: found.id } : null;
+  },
+};
+
 export const memoryRepositories: Repositories = {
   businesses,
   sites,
@@ -803,6 +964,8 @@ export const memoryRepositories: Repositories = {
   localListings,
   products,
   whatsappOrders,
+  siteRepos,
+  deployments,
 };
 
 // Exposed for tests so they can run against a fresh store.

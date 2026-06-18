@@ -123,6 +123,8 @@ model Tenant {
   localListings       LocalListing[]
   products            Product[]
   whatsappOrders      WhatsappOrder[]
+  siteRepos           SiteRepo[]
+  deployments         Deployment[]
 
   @@map("tenants")
 }
@@ -703,4 +705,84 @@ model WhatsappOrder {
   @@index([tenantId])
   @@index([businessId])
   @@map("whatsapp_orders")
+}
+
+// ---------------------------------------------------------------------------
+// W6 — GitHub + Vercel per-customer repos & deploys (ENTERPRISE_REVIEW §5.3).
+//
+// Repo-per-customer, operator-owned: the GitHub App creates one private repo per
+// customer site under an operator org (launchdesk-sites/{slug}). Each publish is
+// a commit (the rollback target + the agent team's working surface) tied to the
+// existing site_versions. GitHub is the SINGLE SOURCE OF TRUTH; the owner never
+// sees Git — they see "history" + "undo".
+//
+// Both tables are tenant-owned → RLS (ENABLE + FORCE + tenant_isolation), the
+// same backstop as every other tenant table. Only the Prisma impl touches them
+// (DATABASE_URL real); in mock mode the in-memory repo is used.
+// ---------------------------------------------------------------------------
+
+// One operator-owned private GitHub repo per customer site. `repoRef` is the
+// backend id (mock: synthetic; live: GitHub repo node id / "owner/name").
+model SiteRepo {
+  id            String   @id @default(cuid())
+  tenantId      String
+  // The site slug this repo backs (one repo per published site). Unique per
+  // tenant so the repo↔site mapping is 1:1 within a tenant.
+  slug          String
+  // Operator-side repo reference (e.g. "launchdesk-sites/joes-shop").
+  repoRef       String
+  repoUrl       String
+  defaultBranch String   @default("main")
+  // The last commit sha we recorded for a publish (mock: synthetic). Lets the
+  // owner-facing "history"/"undo" tie a site_version to its commit.
+  lastCommitSha String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@map("site_repos")
+}
+
+// The StaticTier deploy lifecycle (Vercel). A deploy is GATED + ASYNC: the
+// ActionRouter starts a W1 operation and returns 202; the Vercel webhook (or the
+// reconcile cron in mock) settles it to live/failed and updates this row.
+enum DeploymentStatus {
+  queued
+  building
+  live
+  failed
+}
+
+// One deploy attempt for a site. target='static' in W6 (container/K8s are
+// Phase 3). `operationId` links the async W1 operation that drives it terminal;
+// `url` is the live deployment URL once it settles to `live`.
+model Deployment {
+  id          String           @id @default(cuid())
+  tenantId    String
+  slug        String
+  // The deploy target tier. W6 ships 'static' only (Vercel); 'container'/'k8s'
+  // are Phase 3 (kept as a plain string so future tiers need no enum migration).
+  target      String           @default("static")
+  status      DeploymentStatus @default(queued)
+  url         String?
+  // The async W1 operation that settles this deploy (Vercel webhook / cron).
+  operationId String?
+  // The site_versions version this deploy published (ties deploy↔commit↔version).
+  version     Int?
+  // The vendor-side deployment id (mock: synthetic; live: Vercel deployment id),
+  // used to correlate the inbound Vercel webhook back to this row.
+  providerDeploymentId String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([slug])
+  @@index([operationId])
+  @@index([providerDeploymentId])
+  @@map("deployments")
 }

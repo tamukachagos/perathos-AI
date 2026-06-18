@@ -12,6 +12,7 @@ import { requireTenant } from "@/lib/authz";
 import { getRepositories } from "@/lib/db";
 import { buildPublishedSite } from "@/lib/siteEngine";
 import { sanitizeBusiness, sanitizePublishedSite } from "@/lib/sanitize";
+import { runPublishChain } from "@/lib/publishPipeline";
 
 /** Persist the tenant's primary business profile (the draft). */
 export async function saveBusinessAction(business: Business): Promise<void> {
@@ -53,6 +54,18 @@ export async function publishSiteAction(
     targetType: "site",
     targetId: site.slug,
     metadata: { slug: site.slug, version: published.version },
+  });
+
+  // W6 — publish -> commit -> deploy. The site_version is already written above;
+  // this commits it to the per-customer GitHub repo and triggers a gated+async
+  // Vercel deploy. It is best-effort (a failure never fails the publish) and the
+  // deploy settles to live via the Vercel webhook / reconcile cron.
+  await runPublishChain(repos, {
+    tenantId: ctx.tenantId,
+    actorId: ctx.userId,
+    business: clean,
+    slug: site.slug,
+    version: published.version,
   });
 
   // Refresh the ISR cache for the public page so the new version is served.

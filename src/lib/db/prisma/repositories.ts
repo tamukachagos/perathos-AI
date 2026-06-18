@@ -13,6 +13,9 @@ import type {
   AuditInput,
   BusinessRecord,
   DebitResult,
+  DeploymentInput,
+  DeploymentRecord,
+  DeploymentUpdate,
   DomainInput,
   DomainRecord,
   DomainUpdate,
@@ -28,6 +31,9 @@ import type {
   ProductUpdate,
   Repositories,
   SiteRecord,
+  SiteRepoInput,
+  SiteRepoRecord,
+  SiteRepoUpdate,
   SiteVersionRecord,
   SubscriptionInput,
   SubscriptionRecord,
@@ -1245,6 +1251,230 @@ const whatsappOrders = {
   },
 };
 
+// --- W6 GitHub repos + Vercel deployments (Prisma/Postgres) -----------------
+
+interface SiteRepoRow {
+  id: string;
+  tenantId: string;
+  slug: string;
+  repoRef: string;
+  repoUrl: string;
+  defaultBranch: string;
+  lastCommitSha: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toSiteRepoRecord(row: SiteRepoRow): SiteRepoRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    slug: row.slug,
+    repoRef: row.repoRef,
+    repoUrl: row.repoUrl,
+    defaultBranch: row.defaultBranch,
+    lastCommitSha: row.lastCommitSha,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const siteRepos = {
+  async list(tenantId: string): Promise<SiteRepoRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.siteRepo.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toSiteRepoRecord(r as SiteRepoRow));
+  },
+  async getBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<SiteRepoRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.siteRepo.findFirst({ where: { tenantId, slug } }),
+    );
+    return row ? toSiteRepoRecord(row as SiteRepoRow) : null;
+  },
+  async ensure(
+    tenantId: string,
+    input: SiteRepoInput,
+  ): Promise<SiteRepoRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      // Idempotent on (tenant, slug): return the existing repo or create it.
+      const existing = await tx.siteRepo.findFirst({
+        where: { tenantId, slug: input.slug },
+      });
+      if (existing) return existing;
+      return tx.siteRepo.create({
+        data: {
+          tenantId,
+          slug: input.slug,
+          repoRef: input.repoRef,
+          repoUrl: input.repoUrl,
+          defaultBranch: input.defaultBranch ?? "main",
+          lastCommitSha: input.lastCommitSha ?? null,
+        },
+      });
+    });
+    return toSiteRepoRecord(row as SiteRepoRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: SiteRepoUpdate,
+  ): Promise<SiteRepoRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.siteRepo.findFirst({ where: { id, tenantId } });
+      if (!existing) throw new Error(`SiteRepo ${id} not found for tenant`);
+      return tx.siteRepo.update({
+        where: { id },
+        data: {
+          repoRef: update.repoRef,
+          repoUrl: update.repoUrl,
+          defaultBranch: update.defaultBranch,
+          lastCommitSha: update.lastCommitSha,
+        },
+      });
+    });
+    return toSiteRepoRecord(row as SiteRepoRow);
+  },
+};
+
+interface DeploymentRow {
+  id: string;
+  tenantId: string;
+  slug: string;
+  target: string;
+  status: string;
+  url: string | null;
+  operationId: string | null;
+  version: number | null;
+  providerDeploymentId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+function toDeploymentRecord(row: DeploymentRow): DeploymentRecord {
+  return {
+    id: row.id,
+    tenantId: row.tenantId,
+    slug: row.slug,
+    target: row.target,
+    status: row.status as DeploymentRecord["status"],
+    url: row.url,
+    operationId: row.operationId,
+    version: row.version,
+    providerDeploymentId: row.providerDeploymentId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+const deployments = {
+  async list(tenantId: string): Promise<DeploymentRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.deployment.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toDeploymentRecord(r as DeploymentRow));
+  },
+  async listBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<DeploymentRecord[]> {
+    const rows = await withTenant(tenantId, (tx) =>
+      tx.deployment.findMany({
+        where: { tenantId, slug },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return rows.map((r) => toDeploymentRecord(r as DeploymentRow));
+  },
+  async getLatestBySlug(
+    tenantId: string,
+    slug: string,
+  ): Promise<DeploymentRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.deployment.findFirst({
+        where: { tenantId, slug },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    return row ? toDeploymentRecord(row as DeploymentRow) : null;
+  },
+  async get(tenantId: string, id: string): Promise<DeploymentRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.deployment.findFirst({ where: { id, tenantId } }),
+    );
+    return row ? toDeploymentRecord(row as DeploymentRow) : null;
+  },
+  async create(
+    tenantId: string,
+    input: DeploymentInput,
+  ): Promise<DeploymentRecord> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.deployment.create({
+        data: {
+          tenantId,
+          slug: input.slug,
+          target: input.target ?? "static",
+          status: input.status ?? "queued",
+          url: input.url ?? null,
+          operationId: input.operationId ?? null,
+          version: input.version ?? null,
+          providerDeploymentId: input.providerDeploymentId ?? null,
+        },
+      }),
+    );
+    return toDeploymentRecord(row as DeploymentRow);
+  },
+  async update(
+    tenantId: string,
+    id: string,
+    update: DeploymentUpdate,
+  ): Promise<DeploymentRecord> {
+    const row = await withTenant(tenantId, async (tx) => {
+      const existing = await tx.deployment.findFirst({ where: { id, tenantId } });
+      if (!existing) throw new Error(`Deployment ${id} not found for tenant`);
+      return tx.deployment.update({
+        where: { id },
+        data: {
+          status: update.status,
+          url: update.url,
+          operationId: update.operationId,
+          providerDeploymentId: update.providerDeploymentId,
+        },
+      });
+    });
+    return toDeploymentRecord(row as DeploymentRow);
+  },
+  async getByOperationId(
+    tenantId: string,
+    operationId: string,
+  ): Promise<DeploymentRecord | null> {
+    const row = await withTenant(tenantId, (tx) =>
+      tx.deployment.findFirst({ where: { tenantId, operationId } }),
+    );
+    return row ? toDeploymentRecord(row as DeploymentRow) : null;
+  },
+  async resolveByProviderDeploymentId(
+    providerDeploymentId: string,
+  ): Promise<{ tenantId: string; deploymentId: string } | null> {
+    // Cross-tenant (no session): the signed Vercel webhook resolves the owning
+    // tenant + deployment via the SECURITY DEFINER function, then the webhook
+    // settles INSIDE withTenant(tenantId). B5/W1 pattern.
+    const rows = await prisma.$queryRaw<{ tenantId: string; id: string }[]>`
+      SELECT "tenantId", "id" FROM deployment_owner_by_provider_id(${providerDeploymentId})`;
+    const row = rows[0];
+    return row ? { tenantId: row.tenantId, deploymentId: row.id } : null;
+  },
+};
+
 export const prismaRepositories: Repositories = {
   businesses,
   sites,
@@ -1259,4 +1489,6 @@ export const prismaRepositories: Repositories = {
   localListings,
   products,
   whatsappOrders,
+  siteRepos,
+  deployments,
 };

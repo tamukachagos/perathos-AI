@@ -110,10 +110,16 @@ export const GATED_VERBS: Record<string, GatedVerbSpec> = {
     target: (p) => String(p.slug ?? ""),
   },
   "hosting.deploy": {
+    // W6 — StaticTier (Vercel) deploy. Gated + ASYNC: starts a W1 op and returns
+    // 202; the Vercel webhook (mock: reconcile sweep) settles it to live/failed.
+    // NOT METERED in W6 — static hosting is plan-included (§8), so the estimate
+    // is 0 (the config map's ~R50 estimate is for the future metered tiers; the
+    // StaticTier deploy never debits the wallet). Container/K8s are Phase 3.
     interfaceName: "HostingProvider",
     async: true,
     label: "Deploy site",
     target: (p) => String(p.slug ?? ""),
+    estimateMicro: () => 0n,
   },
   "payment.configure": {
     interfaceName: "PaymentProvider",

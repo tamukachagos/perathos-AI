@@ -32,6 +32,7 @@ import { AgentOps, AnalyticsPanel, ArchitecturePanel } from "./LowerPanels";
 import { OnboardingWizard } from "./OnboardingWizard";
 import { ApprovalDialog } from "./ApprovalDialog";
 import { DomainStep } from "./DomainStep";
+import { DeployStep } from "./DeployStep";
 import { GbpStep } from "./GbpStep";
 import { WhatsappCommerce } from "./WhatsappCommerce";
 
@@ -408,6 +409,14 @@ export function Dashboard({
           business={business}
           authenticated={authenticated}
           canRegister={Boolean(entitlements.customDomain)}
+          onNotice={setNotice}
+        />
+
+        <DeployStep
+          business={business}
+          authenticated={authenticated}
+          slug={published ? ownSlug : latestSite?.slug ?? null}
+          canConnectDomain={Boolean(entitlements.customDomain)}
           onNotice={setNotice}
         />
 

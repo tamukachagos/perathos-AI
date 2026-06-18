@@ -19,6 +19,7 @@ export async function truncateAll(): Promise<void> {
       "token_wallets","usage_records","invoices",
       "domains",
       "local_listings","products","whatsapp_orders",
+      "site_repos","deployments",
       "audit_log","leads","site_versions","generated_sites",
       "businesses","subscriptions","adapter_connections","memberships","tenants"
     RESTART IDENTITY CASCADE;

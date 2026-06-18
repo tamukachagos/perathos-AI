@@ -287,6 +287,84 @@ export interface WhatsappOrderUpdate {
   paymentLinkRef?: string | null;
 }
 
+// --- W6 GitHub + Vercel per-customer repos & deploys -------------------------
+
+/**
+ * One operator-owned private GitHub repo per customer site (§5.3). GitHub is the
+ * single source of truth; the owner never sees Git — this record is surfaced as
+ * "history". `repoRef` is the backend id (mock: synthetic; live: "owner/name");
+ * `lastCommitSha` ties the most recent publish (a commit) to its site_version.
+ */
+export interface SiteRepoRecord {
+  id: string;
+  tenantId: string;
+  slug: string;
+  repoRef: string;
+  repoUrl: string;
+  defaultBranch: string;
+  lastCommitSha: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SiteRepoInput {
+  slug: string;
+  repoRef: string;
+  repoUrl: string;
+  defaultBranch?: string;
+  lastCommitSha?: string | null;
+}
+
+export interface SiteRepoUpdate {
+  repoRef?: string;
+  repoUrl?: string;
+  defaultBranch?: string;
+  lastCommitSha?: string | null;
+}
+
+/** The StaticTier (Vercel) deploy lifecycle, mirroring the Prisma enum. */
+export type DeploymentStatus = "queued" | "building" | "live" | "failed";
+
+/**
+ * One StaticTier deploy attempt for a site (§5.2 StaticTier; container/K8s are
+ * Phase 3). A deploy is gated + async: `operationId` links the W1 operation the
+ * Vercel webhook (or the reconcile cron in mock) settles to live/failed. `url`
+ * is the live deployment URL once it settles; `version` ties it to the
+ * site_versions snapshot it published (deploy↔commit↔version).
+ */
+export interface DeploymentRecord {
+  id: string;
+  tenantId: string;
+  slug: string;
+  /** Deploy target tier. W6 ships "static" only. */
+  target: string;
+  status: DeploymentStatus;
+  url: string | null;
+  operationId: string | null;
+  version: number | null;
+  /** Vendor-side deployment id, correlating the inbound Vercel webhook. */
+  providerDeploymentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeploymentInput {
+  slug: string;
+  target?: string;
+  status?: DeploymentStatus;
+  url?: string | null;
+  operationId?: string | null;
+  version?: number | null;
+  providerDeploymentId?: string | null;
+}
+
+export interface DeploymentUpdate {
+  status?: DeploymentStatus;
+  url?: string | null;
+  operationId?: string | null;
+  providerDeploymentId?: string | null;
+}
+
 export type AdapterConnMode = "mock" | "sandbox" | "live";
 export type AdapterConnStatus = "ready" | "review" | "pending";
 
@@ -641,6 +719,63 @@ export interface WhatsappOrderRepository {
   ): Promise<WhatsappOrderRecord>;
 }
 
+// --- W6 repositories ---------------------------------------------------------
+
+export interface SiteRepoRepository {
+  /** All repos owned by a tenant (newest first). */
+  list(tenantId: string): Promise<SiteRepoRecord[]>;
+  /** Read the repo backing a site by slug, tenant-scoped (null if none). */
+  getBySlug(tenantId: string, slug: string): Promise<SiteRepoRecord | null>;
+  /**
+   * Ensure a repo exists for (tenant, slug): returns the existing one or creates
+   * it. Idempotent on (tenantId, slug) — one repo per customer site.
+   */
+  ensure(tenantId: string, input: SiteRepoInput): Promise<SiteRepoRecord>;
+  /** Update mutable fields (e.g. lastCommitSha on a publish), tenant-scoped. */
+  update(
+    tenantId: string,
+    id: string,
+    update: SiteRepoUpdate,
+  ): Promise<SiteRepoRecord>;
+}
+
+export interface DeploymentRepository {
+  /** All deployments owned by a tenant (newest first). */
+  list(tenantId: string): Promise<DeploymentRecord[]>;
+  /** A site's deployments (newest first), tenant-scoped. */
+  listBySlug(tenantId: string, slug: string): Promise<DeploymentRecord[]>;
+  /** The latest deployment for a site, or null. */
+  getLatestBySlug(tenantId: string, slug: string): Promise<DeploymentRecord | null>;
+  /** Read a deployment by id, tenant-scoped. */
+  get(tenantId: string, id: string): Promise<DeploymentRecord | null>;
+  /** Create a deployment row at deploy request time (bound to tenantId here). */
+  create(tenantId: string, input: DeploymentInput): Promise<DeploymentRecord>;
+  /** Update mutable fields (status/url) on settlement, tenant-scoped. */
+  update(
+    tenantId: string,
+    id: string,
+    update: DeploymentUpdate,
+  ): Promise<DeploymentRecord>;
+  /**
+   * Read a deployment by its async operation id, tenant-scoped. The Vercel
+   * webhook resolves the deploy from the operation it settles.
+   */
+  getByOperationId(
+    tenantId: string,
+    operationId: string,
+  ): Promise<DeploymentRecord | null>;
+  /**
+   * Resolve the owning {tenantId, deploymentId} for a vendor-side
+   * providerDeploymentId, ACROSS tenants (the signed Vercel webhook has no
+   * session). Returns null when unknown. Under Postgres FORCE RLS this routes
+   * through a tightly-scoped SECURITY DEFINER function (the W1 pattern); the
+   * webhook then settles INSIDE that tenant's scope.
+   */
+  resolveByProviderDeploymentId(
+    providerDeploymentId: string,
+  ): Promise<{ tenantId: string; deploymentId: string } | null>;
+}
+
 /** The full data-access surface, assembled by the factory. */
 export interface Repositories {
   businesses: BusinessRepository;
@@ -656,4 +791,6 @@ export interface Repositories {
   localListings: LocalListingRepository;
   products: ProductRepository;
   whatsappOrders: WhatsappOrderRepository;
+  siteRepos: SiteRepoRepository;
+  deployments: DeploymentRepository;
 }
