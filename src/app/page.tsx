@@ -9,22 +9,27 @@ import {
   formatMicroZar,
   MICRO_PER_RAND,
 } from "@/lib/billing/meteringConfig";
-import { Dashboard } from "@/components/dashboard/Dashboard";
+import { getAgentStateAction, type AgentState } from "@/app/agent/actions";
+import { getCreditsStateAction, type CreditsState } from "@/app/credits/actions";
+import { StudioShell } from "@/components/studio/StudioShell";
 
 // Server component: resolves the session/tenant and, when authenticated, loads
-// the persisted business + published sites from the repository. Anonymous users
-// get the local-draft UX (no initial data) exactly as in M0.
+// the persisted business + published sites + agent/credits state. Anonymous
+// users get the local-draft UX (no initial data) exactly as before. The default
+// workspace is now Launch Studio — the Claude-style conversational shell — which
+// reuses every existing dashboard panel as a left-menu section.
 export default async function Page() {
   const ctx = await getCurrentTenant();
 
   let initialBusiness: Business | null = null;
   let initialSites: PublishedSites | null = null;
   let email: string | null = null;
-  // Default tier for anonymous/new tenants is Free.
   let plan: PlanId = "free";
   let entitlements: Entitlements = planFor("free").entitlements;
   let creditsZar: string | null = null;
   let creditsUsagePercent = 0;
+  let agentState: AgentState | null = null;
+  let creditsState: CreditsState | null = null;
 
   if (ctx) {
     const repos = await getRepositories();
@@ -43,7 +48,7 @@ export default async function Page() {
     plan = effectivePlan(sub);
     entitlements = entitlementsForSubscription(sub);
 
-    // W2 — wallet balance chip (Rand + a usage progress bar; never tokens).
+    // Wallet balance chip (Rand + a usage progress bar; never tokens).
     const balanceMicro = await getBalance(repos, ctx.tenantId);
     creditsZar = formatMicroZar(balanceMicro);
     const period = currentPeriod();
@@ -54,10 +59,15 @@ export default async function Page() {
       allowance > 0n
         ? Math.min(100, Math.round(Number((periodSpend * 100n) / allowance)))
         : 0;
+
+    // Pre-load the agent + credits state so the Activity / Credits sections
+    // render with data on first paint (both are entitlement-gated inside).
+    agentState = await getAgentStateAction();
+    creditsState = await getCreditsStateAction();
   }
 
   return (
-    <Dashboard
+    <StudioShell
       authenticated={Boolean(ctx)}
       email={email}
       initialBusiness={initialBusiness}
@@ -66,6 +76,8 @@ export default async function Page() {
       entitlements={entitlements}
       creditsZar={creditsZar}
       creditsUsagePercent={creditsUsagePercent}
+      agentState={agentState}
+      creditsState={creditsState}
     />
   );
 }
