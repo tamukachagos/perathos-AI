@@ -26,7 +26,7 @@ test("studio -> publish -> live site with JSON-LD, wa.me CTA, consent form", asy
   // 3) Publish from the Preview pane (left-menu "Preview" opens the workspace
   // Preview tab + the publish button).
   await rail.getByRole("button", { name: "Preview" }).click();
-  await page.getByRole("button", { name: /Publish site|Update site/ }).click();
+  await page.getByRole("button", { name: /Publish site|Update site/ }).first().click();
 
   // 4) Open the published site directly and assert it renders the business.
   await page.goto(`/s/${SEED_SLUG}`);
