@@ -1,6 +1,6 @@
 import { Check, ChevronRight, Clock3, ShieldCheck, type LucideIcon } from "lucide-react";
 import type { AdapterStatus } from "@/lib/types";
-import { STATUS, type EvaluatedChecklistAdapter } from "@/integrations/core/registry";
+import { STATUS, type EvaluatedChecklistAdapter } from "@/integrations/core/checklist";
 import { checklistIcons } from "@/components/checklistIcons";
 
 const statusMeta: Record<

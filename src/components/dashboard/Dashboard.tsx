@@ -6,7 +6,7 @@ import Link from "next/link";
 import { CreditCard, Copy, History, LogIn, Play, Sparkles, Wallet, Wand2 } from "lucide-react";
 import type { Business, PublishedSites } from "@/lib/types";
 import type { Entitlements } from "@/lib/billing/plans";
-import { evaluateAdapters, readinessScore } from "@/integrations/core/registry";
+import { evaluateAdapters, readinessScore } from "@/integrations/core/checklist";
 import { buildPublishedSite } from "@/lib/siteEngine";
 import { slugify } from "@/lib/format";
 import {

@@ -9,7 +9,7 @@ import type {
   PublishedSites,
 } from "./types";
 import { slugify } from "./format";
-import { launchAdapters, STATUS } from "@/integrations/core/registry";
+import { launchAdapters, STATUS } from "@/integrations/core/checklist";
 
 export { slugify };
 
