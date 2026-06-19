@@ -20,7 +20,13 @@ export function CreditsPanel({ initialState }: { initialState: CreditsState }) {
     setBusy(true);
     setNotice("");
     try {
-      const next = await topUpAction(value);
+      const result = await topUpAction(value);
+      if (result.kind === "checkout") {
+        setNotice("Opening secure checkout...");
+        router.push(result.checkoutUrl);
+        return;
+      }
+      const next = result.state;
       setState(next);
       setNotice(`Added R${value} to your credits. New balance ${next.balanceZar}.`);
       router.refresh();

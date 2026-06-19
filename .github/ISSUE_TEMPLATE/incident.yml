@@ -1,0 +1,40 @@
+name: Incident
+description: Track a production incident, provider outage, or failed automation.
+title: "[Incident]: "
+labels: ["incident", "needs-triage"]
+body:
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - SEV1 customer sites/payments down
+        - SEV2 major workflow degraded
+        - SEV3 partial/provider degradation
+        - SEV4 internal follow-up
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Customer Impact
+      description: Who is affected and what can they not do?
+    validations:
+      required: true
+  - type: textarea
+    id: signals
+    attributes:
+      label: Signals
+      description: Logs, checks, webhook ids, deployment ids, or support reports.
+    validations:
+      required: true
+  - type: textarea
+    id: containment
+    attributes:
+      label: Containment / Rollback
+      description: What action has been taken or is ready to take?
+  - type: textarea
+    id: prevention
+    attributes:
+      label: Follow-Up Test or Monitor
+      description: What regression test, runbook patch, or monitor should be added?

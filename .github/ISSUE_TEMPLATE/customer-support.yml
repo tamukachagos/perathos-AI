@@ -1,0 +1,38 @@
+name: Customer Support
+description: Turn a customer report into an accountable support ticket.
+title: "[Support]: "
+labels: ["support", "needs-triage"]
+body:
+  - type: input
+    id: customer
+    attributes:
+      label: Customer or Tenant
+      description: Use an internal tenant id or non-sensitive customer reference.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Onboarding
+        - Website
+        - Domain
+        - Email
+        - WhatsApp
+        - Payments
+        - AI agent
+        - Billing
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Report
+      description: Summarize the customer-visible issue without secrets or PII.
+    validations:
+      required: true
+  - type: textarea
+    id: next
+    attributes:
+      label: Next Action
+      description: What should the support or agent team do next?

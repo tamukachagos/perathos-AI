@@ -189,6 +189,40 @@ async function paystackFetch(
   return json.data;
 }
 
+export interface PaystackInitializeInput {
+  amountCents: number;
+  currency: "ZAR";
+  callbackUrl: string;
+  customerEmail?: string | null;
+  planCode?: string;
+  metadata: Record<string, string | number | boolean | null | undefined>;
+}
+
+export async function initializePaystackTransaction(
+  secretKey: string,
+  input: PaystackInitializeInput,
+): Promise<CheckoutSession> {
+  const data = (await paystackFetch(secretKey, "/transaction/initialize", {
+    method: "POST",
+    body: {
+      email: input.customerEmail ?? undefined,
+      amount: input.amountCents,
+      currency: input.currency,
+      callback_url: input.callbackUrl,
+      ...(input.planCode ? { plan: input.planCode } : {}),
+      metadata: input.metadata,
+    },
+  })) as { authorization_url?: string; reference?: string };
+
+  if (!data.authorization_url || !data.reference) {
+    throw new Error("paystack_init_missing_fields");
+  }
+  return {
+    checkoutUrl: data.authorization_url,
+    reference: data.reference,
+  };
+}
+
 export function paystackBillingProvider(): BillingProvider {
   const secretKey = process.env.PAYSTACK_SECRET_KEY!.trim();
   return {
@@ -200,24 +234,14 @@ export function paystackBillingProvider(): BillingProvider {
       // currency's subunit (ZAR cents), which matches Plan.priceCents. The
       // plan code (when set) turns this into a recurring subscription on charge.
       const planCode = paystackPlanCode(input.plan);
-      const data = (await paystackFetch(secretKey, "/transaction/initialize", {
-        method: "POST",
-        body: {
-          email: input.customerEmail ?? undefined,
-          amount: plan.priceCents,
-          currency: plan.currency,
-          callback_url: input.callbackUrl,
-          ...(planCode ? { plan: planCode } : {}),
-          metadata: { tenantId: input.tenantId, plan: input.plan },
-        },
-      })) as { authorization_url?: string; reference?: string };
-      if (!data.authorization_url || !data.reference) {
-        throw new Error("paystack_init_missing_fields");
-      }
-      return {
-        checkoutUrl: data.authorization_url,
-        reference: data.reference,
-      };
+      return initializePaystackTransaction(secretKey, {
+        amountCents: plan.priceCents,
+        currency: plan.currency,
+        callbackUrl: input.callbackUrl,
+        customerEmail: input.customerEmail,
+        planCode,
+        metadata: { tenantId: input.tenantId, plan: input.plan },
+      });
     },
     async cancel(input: CancelInput): Promise<ProviderSubscription> {
       // Fetch the subscription to get the email token Paystack requires to

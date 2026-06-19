@@ -1,0 +1,17 @@
+# Require owner review for the trust-boundary surfaces.
+* @tamukachagos
+
+/.github/ @tamukachagos
+/prisma/ @tamukachagos
+/src/lib/auth* @tamukachagos
+/src/lib/db/ @tamukachagos
+/src/lib/billing/ @tamukachagos
+/src/app/billing/ @tamukachagos
+/src/app/credits/ @tamukachagos
+/src/app/api/webhooks/ @tamukachagos
+/src/app/api/cron/ @tamukachagos
+/src/integrations/core/ @tamukachagos
+/src/integrations/payment/ @tamukachagos
+/src/integrations/domain/ @tamukachagos
+/src/integrations/hosting/ @tamukachagos
+/src/integrations/agentTeam/ @tamukachagos

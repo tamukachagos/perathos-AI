@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/lib/auth";
-import { hasDatabase } from "@/lib/env";
+import { getAuthMode } from "@/lib/authMode";
 
-// Sign-in page. In mock mode it shows a one-click dev sign-in (no email, no DB);
-// in Postgres mode it sends a magic link via the Nodemailer provider. Either
-// way, on success we land back on the dashboard, which migrates the local draft.
+// Sign-in page. The rendered form now mirrors the provider list Auth.js actually
+// configured, so production never offers dev sign-in or an unavailable provider.
 export default async function SignInPage({
   searchParams,
 }: {
@@ -27,18 +26,26 @@ export default async function SignInPage({
     redirect("/sign-in?sent=1");
   }
 
-  const dbMode = hasDatabase();
+  const authMode = getAuthMode();
+  const emailMode = authMode === "email";
+  const mockMode = authMode === "mock";
+  const unconfigured = authMode === "unconfigured";
 
   return (
     <main className="published-shell missing-site">
       <section className="missing-site-panel">
         <h1>Sign in to Launch Desk</h1>
-        {dbMode ? (
-          <p>We will email you a secure magic link — no password needed.</p>
-        ) : (
+        {emailMode ? (
+          <p>We will email you a secure magic link. No password needed.</p>
+        ) : mockMode ? (
           <p>
             Mock mode: sign in instantly with any email. No database, no email
             delivery, no secrets required.
+          </p>
+        ) : (
+          <p>
+            Sign-in setup is incomplete. Add a real database, AUTH_SECRET, and
+            EMAIL_SERVER before accepting production users.
           </p>
         )}
 
@@ -48,20 +55,30 @@ export default async function SignInPage({
           </p>
         ) : null}
 
-        <form action={dbMode ? magicLink : devSignIn} className="lead-form">
-          <label>
-            Email
-            <input
-              type="email"
-              name="email"
-              placeholder="owner@example.com"
-              required={dbMode}
-            />
-          </label>
-          <button className="public-primary" type="submit">
-            {dbMode ? "Email me a link" : "Sign in (dev)"}
-          </button>
-        </form>
+        {unconfigured ? (
+          <p className="billing-error" role="alert">
+            Production sign-in is disabled until email authentication is
+            configured.
+          </p>
+        ) : (
+          <form
+            action={emailMode ? magicLink : devSignIn}
+            className="lead-form"
+          >
+            <label>
+              Email
+              <input
+                type="email"
+                name="email"
+                placeholder="owner@example.com"
+                required={emailMode}
+              />
+            </label>
+            <button className="public-primary" type="submit">
+              {emailMode ? "Email me a link" : "Sign in (dev)"}
+            </button>
+          </form>
+        )}
       </section>
     </main>
   );

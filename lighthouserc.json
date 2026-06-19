@@ -1,7 +1,7 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "npm run start",
+      "startServerCommand": "cross-env LAUNCH_DESK_MOCK=1 npm run start",
       "startServerReadyPattern": "Ready|started server|Local:",
       "url": ["http://localhost:3000/s/maboneng-mobile-spa"],
       "numberOfRuns": 1,

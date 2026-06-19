@@ -1,0 +1,41 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 8
+    groups:
+      next-runtime:
+        patterns:
+          - "next"
+          - "react"
+          - "react-dom"
+          - "eslint-config-next"
+      prisma:
+        patterns:
+          - "prisma"
+          - "@prisma/*"
+      test-and-ci:
+        dependency-type: development
+        patterns:
+          - "@playwright/*"
+          - "vitest"
+          - "vite"
+          - "@lhci/*"
+          - "eslint*"
+      auth-and-payments:
+        patterns:
+          - "next-auth"
+          - "@auth/*"
+          - "nodemailer"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:30"
+    open-pull-requests-limit: 5

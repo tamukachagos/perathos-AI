@@ -30,8 +30,8 @@
 
 - [ ] Errors and key events go through the **structured logger** (`src/lib/logger.ts`),
       which **never logs PII** (PII-ish keys redacted, PII-ish values masked).
-- [ ] **Sentry** is wired but OPTIONAL: enabled only when `SENTRY_DSN` is set,
-      a no-op otherwise. Mock mode stays clean.
+- [ ] **Sentry** is optional: install a patched `@sentry/nextjs`, then set
+      `SENTRY_DSN`. Without the package or DSN, the wrapper is a no-op.
 - [ ] The append-only **audit log** is queryable (tenant-scoped read at
       `/admin/audit`).
 

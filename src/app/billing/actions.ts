@@ -23,6 +23,7 @@ import {
   effectivePlan,
   startUpgrade,
 } from "@/lib/billing/service";
+import { selectBillingProvider } from "@/integrations/payment/subscription";
 import type { SubscriptionRecord } from "@/lib/db/types";
 
 export interface BillingState {
@@ -74,8 +75,31 @@ export async function startUpgradeAction(plan: PlanId): Promise<UpgradeResult> {
     return { checkoutUrl: "/billing", reference: "free" };
   }
 
+  const repos = await getRepositories();
+  const provider = selectBillingProvider();
+  if (provider.charges) {
+    await repos.subscriptions.upsert(ctx.tenantId, {
+      plan,
+      status: "incomplete",
+      provider: provider.name,
+      providerSubscriptionId: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+    });
+  }
+
   const callbackUrl = `${env.appUrl}/billing/confirm`;
   const session = await startUpgrade(ctx.tenantId, plan, callbackUrl, ctx.email);
+  if (provider.charges) {
+    await repos.subscriptions.upsert(ctx.tenantId, {
+      plan,
+      status: "incomplete",
+      provider: provider.name,
+      providerSubscriptionId: session.reference,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+    });
+  }
   return { checkoutUrl: session.checkoutUrl, reference: session.reference };
 }
 
@@ -89,9 +113,17 @@ export async function confirmUpgradeAction(
 ): Promise<BillingState> {
   const ctx = await requireTenant();
   if (!isPlanId(plan)) throw new Error("Unknown plan.");
+  const provider = selectBillingProvider();
+  if (provider.charges) {
+    throw new Error("Live checkout is confirmed by the signed Paystack webhook.");
+  }
+  const providerStatus = await provider.fetchStatus(reference);
+  if (!providerStatus || providerStatus.plan !== plan) {
+    throw new Error("Checkout reference could not be verified.");
+  }
   const repos = await getRepositories();
   await activatePlan(repos, ctx.tenantId, plan, {
-    provider: "mock",
+    provider: provider.name,
     providerSubscriptionId: reference,
   });
   revalidatePath("/billing");

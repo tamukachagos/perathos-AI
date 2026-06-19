@@ -13,10 +13,12 @@ import type { Repositories, DebitResult, InvoiceRecord } from "@/lib/db/types";
 import {
   applyMargin,
   currentPeriod,
+  MICRO_PER_CENT,
   multiplierForKind,
   TOKEN_TOPUP_SKU,
 } from "@/lib/billing/meteringConfig";
 import {
+  initializePaystackTransaction,
   selectBillingProvider,
   type CheckoutSession,
 } from "@/integrations/payment/subscription";
@@ -163,14 +165,23 @@ export async function startTopUpCheckout(
   customerEmail?: string | null,
 ): Promise<CheckoutSession> {
   const provider = selectBillingProvider();
-  // Reuse the subscription checkout shape; `plan` carries the top-up SKU so the
-  // webhook/return can distinguish a credit purchase from a plan upgrade. (The
-  // mock provider just echoes it back on the callback URL.)
-  return provider.createCheckout({
-    tenantId,
-    plan: TOKEN_TOPUP_SKU as never,
+  if (!provider.charges) {
+    throw new Error("topup_checkout_requires_live_provider");
+  }
+  const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim();
+  if (!secretKey) throw new Error("paystack_not_configured");
+
+  const amountMicro = BigInt(amountCentsZar) * MICRO_PER_CENT;
+  return initializePaystackTransaction(secretKey, {
+    amountCents: amountCentsZar,
+    currency: "ZAR",
     callbackUrl,
     customerEmail,
+    metadata: {
+      tenantId,
+      kind: TOKEN_TOPUP_SKU,
+      amountMicro: amountMicro.toString(),
+    },
   });
 }
 

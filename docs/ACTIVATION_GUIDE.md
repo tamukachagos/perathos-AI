@@ -72,6 +72,7 @@ Do these in order; each is independently valuable.
 - **Go production:** swap `sk_test_…` → `sk_live_…` once the test flow is confirmed; complete a payout bank account in Paystack.
 
 ### Stage 5 — Observability (Sentry) ✅ drop-in
+- **Install:** `npm install @sentry/nextjs@latest --save-optional` when you are ready to enable Sentry. Keep it patched; the default install omits it so production audits are not blocked by an unused optional SDK.
 - **Vars:** `SENTRY_DSN`. Unset = no-op (the PII-safe structured logger runs regardless).
 
 ---

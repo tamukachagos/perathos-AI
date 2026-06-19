@@ -32,7 +32,8 @@ export default defineConfig({
   // Build then start the production server so the golden path exercises the same
   // server-rendered output (JSON-LD, ISR) CI builds. Mock mode by default.
   webServer: {
-    command: "npm run build && npm run start",
+    command:
+      "cross-env LAUNCH_DESK_MOCK=1 npm run build && cross-env LAUNCH_DESK_MOCK=1 npm run start",
     url: BASE_URL,
     timeout: 180_000,
     reuseExistingServer: !process.env.CI,

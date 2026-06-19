@@ -9,12 +9,18 @@
 import { revalidatePath } from "next/cache";
 import { requireTenant } from "@/lib/authz";
 import { getRepositories } from "@/lib/db";
-import { getBalance, topUp } from "@/lib/billing/metering";
+import { env } from "@/lib/env";
+import {
+  getBalance,
+  startTopUpCheckout,
+  topUp,
+} from "@/lib/billing/metering";
 import {
   currentPeriod,
   formatMicroZar,
   MICRO_PER_RAND,
 } from "@/lib/billing/meteringConfig";
+import { selectBillingProvider } from "@/integrations/payment/subscription";
 
 /** A usage-history line, plain-language (kind label + amount), no model names. */
 export interface UsageLine {
@@ -41,6 +47,10 @@ export interface CreditsState {
   period: string;
   recent: UsageLine[];
 }
+
+export type TopUpResult =
+  | { kind: "credited"; state: CreditsState }
+  | { kind: "checkout"; checkoutUrl: string; reference: string };
 
 // A plain-language label for each metering kind family. We deliberately never
 // surface model names or token counts to the owner (§6) — just what it was for.
@@ -103,16 +113,33 @@ export async function getCreditsStateAction(): Promise<CreditsState> {
  * Paystack keys this would instead begin a hosted checkout (token_topup SKU) and
  * credit on the webhook — see startTopUpCheckout in the metering service.
  */
-export async function topUpAction(amountRand: number): Promise<CreditsState> {
+export async function topUpAction(amountRand: number): Promise<TopUpResult> {
   const ctx = await requireTenant();
   if (!Number.isFinite(amountRand) || amountRand <= 0) {
     throw new Error("Enter a top-up amount greater than zero.");
   }
   // Cap a single mock top-up so a fat-fingered value can't mint a fortune.
   const capped = Math.min(Math.floor(amountRand), 100_000);
+  if (capped <= 0) throw new Error("Enter a whole-Rand top-up amount.");
+
+  const provider = selectBillingProvider();
+  if (provider.charges) {
+    const checkout = await startTopUpCheckout(
+      ctx.tenantId,
+      capped * 100,
+      `${env.appUrl}/credits`,
+      ctx.email,
+    );
+    return {
+      kind: "checkout",
+      checkoutUrl: checkout.checkoutUrl,
+      reference: checkout.reference,
+    };
+  }
+
   const repos = await getRepositories();
   await topUp(repos, ctx.tenantId, BigInt(capped) * MICRO_PER_RAND);
   revalidatePath("/credits");
   revalidatePath("/");
-  return getCreditsStateAction();
+  return { kind: "credited", state: await getCreditsStateAction() };
 }

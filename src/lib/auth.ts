@@ -18,7 +18,8 @@ import NextAuth, { type NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Nodemailer from "next-auth/providers/nodemailer";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import { env, isDevMockMode } from "@/lib/env";
+import { env } from "@/lib/env";
+import { getAuthMode } from "@/lib/authMode";
 import { prisma } from "@/lib/db/prisma/client";
 import { DEV_USER_EMAIL, DEV_USER_ID } from "@/lib/db/seed";
 
@@ -31,12 +32,9 @@ const DEV_SECRET = "launch-desk-dev-secret-not-for-production";
 // `hasDatabase()`. A malformed/absent DATABASE_URL in production therefore can
 // NOT flip the app to passwordless login; instead the real (magic-link) config
 // is used and a missing AUTH_SECRET makes Auth.js refuse to operate.
-function shouldUseMockAuth(): boolean {
-  return isDevMockMode();
-}
-
 function buildConfig(): NextAuthConfig {
-  if (!shouldUseMockAuth()) {
+  const authMode = getAuthMode();
+  if (authMode !== "mock") {
     // --- Production: magic-link + DB sessions --------------------------------
     // B6/S4: AUTH_SECRET MUST be present in production. We pass env.authSecret
     // verbatim (no dev fallback): Auth.js itself fails closed when it is unset,
@@ -49,7 +47,7 @@ function buildConfig(): NextAuthConfig {
     // when unconfigured keeps the build green AND is still FAIL-CLOSED at
     // runtime: with no email provider there is simply no way to sign in (the
     // dev/passwordless path is never reachable in production).
-    const providers = process.env.EMAIL_SERVER
+    const providers = authMode === "email"
       ? [
           Nodemailer({
             server: process.env.EMAIL_SERVER,
@@ -62,6 +60,7 @@ function buildConfig(): NextAuthConfig {
       secret: env.authSecret,
       session: { strategy: "database" },
       providers,
+      trustHost: true,
       pages: { signIn: "/sign-in" },
     };
   }
@@ -70,6 +69,7 @@ function buildConfig(): NextAuthConfig {
   return {
     secret: env.authSecret ?? DEV_SECRET,
     session: { strategy: "jwt" },
+    trustHost: true,
     providers: [
       Credentials({
         id: "dev",

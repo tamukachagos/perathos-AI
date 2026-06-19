@@ -23,6 +23,8 @@ import { logger } from "@/lib/logger";
 import { captureError } from "@/lib/observability";
 import { isPlanId, type PlanId } from "@/lib/billing/plans";
 import { activatePlan, cancelPlan } from "@/lib/billing/service";
+import { topUp } from "@/lib/billing/metering";
+import { TOKEN_TOPUP_SKU } from "@/lib/billing/meteringConfig";
 import {
   MissingProductionSecretError,
   requireProductionSecret,
@@ -67,12 +69,23 @@ interface PaystackEvent {
   event?: string;
   data?: {
     subscription_code?: string;
-    /** Our metadata: the tenant + plan we set when creating the subscription. */
-    metadata?: { tenantId?: string; plan?: string };
+    /** Our metadata: the tenant + plan/top-up marker set when checkout starts. */
+    metadata?: {
+      tenantId?: string;
+      plan?: string;
+      kind?: string;
+      amountMicro?: string;
+    };
     plan?: { plan_code?: string };
     status?: string;
     next_payment_date?: string;
   };
+}
+
+function parsePositiveBigInt(value: string | undefined): bigint | null {
+  if (!value || !/^\d+$/.test(value)) return null;
+  const parsed = BigInt(value);
+  return parsed > 0n ? parsed : null;
 }
 
 export async function POST(request: Request) {
@@ -138,6 +151,10 @@ export async function POST(request: Request) {
     // wins and a mismatching metadata tenant is rejected (no self-upgrade of
     // another tenant by forging metadata).
     const metaTenantId = data.metadata?.tenantId ?? null;
+    const isWalletTopUp = data.metadata?.kind === TOKEN_TOPUP_SKU;
+    const topUpAmountMicro = isWalletTopUp
+      ? parsePositiveBigInt(data.metadata?.amountMicro)
+      : null;
     let tenantId: string | null = null;
 
     if (subCode) {
@@ -161,16 +178,25 @@ export async function POST(request: Request) {
       } else {
         // First event for a not-yet-stored subscription: bind to the metadata
         // tenant only if it resolves to an existing tenant we own.
-        if (metaTenantId) {
+        if (metaTenantId && isWalletTopUp) {
+          // One-off wallet top-ups do not have a subscription row. The tenant id
+          // was set by our server-side checkout initializer and the body is
+          // signed by Paystack, so this is the authoritative correlation.
+          tenantId = metaTenantId;
+        } else if (metaTenantId) {
           const sub = await repos.subscriptions.get(metaTenantId);
           if (sub) tenantId = metaTenantId;
         }
       }
     } else if (metaTenantId) {
-      // No subscription_code at all (e.g. a one-off charge): only honour the
-      // metadata tenant when it maps to a real tenant in our store.
-      const sub = await repos.subscriptions.get(metaTenantId);
-      if (sub) tenantId = metaTenantId;
+      if (isWalletTopUp) {
+        tenantId = metaTenantId;
+      } else {
+        // No subscription_code at all: only honour the metadata tenant when it
+        // maps to an upgrade attempt we already started.
+        const sub = await repos.subscriptions.get(metaTenantId);
+        if (sub) tenantId = metaTenantId;
+      }
     }
 
     if (!tenantId) {
@@ -199,7 +225,13 @@ export async function POST(request: Request) {
       case "charge.success":
       case "subscription.create":
       case "invoice.payment_succeeded": {
-        if (plan) {
+        if (event.event === "charge.success" && isWalletTopUp) {
+          if (!topUpAmountMicro) {
+            logger.info("paystack.webhook.invalid_topup", { event: event.event });
+            break;
+          }
+          await topUp(repos, tenantId, topUpAmountMicro);
+        } else if (plan) {
           await activatePlan(repos, tenantId, plan, {
             provider: PROVIDER,
             providerSubscriptionId: subCode,
@@ -222,9 +254,14 @@ export async function POST(request: Request) {
     await repos.audit.append(tenantId, {
       actorId: null,
       action: "billing.webhook",
-      targetType: "subscription",
-      targetId: subCode,
-      metadata: { event: event.event, eventId, provider: PROVIDER },
+      targetType: isWalletTopUp ? "wallet" : "subscription",
+      targetId: isWalletTopUp ? tenantId : subCode,
+      metadata: {
+        event: event.event,
+        eventId,
+        provider: PROVIDER,
+        kind: isWalletTopUp ? TOKEN_TOPUP_SKU : "subscription",
+      },
     });
 
     // Already claimed atomically above before applying.

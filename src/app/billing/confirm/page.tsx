@@ -33,6 +33,23 @@ export default async function BillingConfirmPage({
     if (confirmed) redirect("/billing");
   }
 
+  if (reference && !plan) {
+    return (
+      <main className="billing-shell">
+        <header className="billing-head">
+          <h1>Payment processing</h1>
+          <p>
+            We are waiting for Paystack&apos;s signed confirmation. Your plan updates
+            automatically once the webhook arrives.
+          </p>
+        </header>
+        <Link className="primary-button" href="/billing">
+          View billing
+        </Link>
+      </main>
+    );
+  }
+
   // Only reached when params are missing/invalid (a real redirect throws above).
   return (
     <main className="billing-shell">

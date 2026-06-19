@@ -9,10 +9,10 @@
     "vercel-build": "prisma generate && node scripts/db-deploy.mjs && next build",
     "db:deploy": "node scripts/db-deploy.mjs",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:db": "vitest run",
+    "test:db": "cross-env VITEST_DB=1 vitest run",
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
@@ -20,7 +20,7 @@
     "db:seed": "node prisma/seed.mjs",
     "e2e": "playwright test",
     "e2e:install": "playwright install --with-deps chromium",
-    "lighthouse": "lhci autorun"
+    "lighthouse": "node ./node_modules/@lhci/cli/src/cli.js autorun"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
@@ -34,17 +34,15 @@
     "react-dom": "^19.0.0",
     "sanitize-html": "^2.17.5"
   },
-  "optionalDependencies": {
-    "@sentry/nextjs": "^8.47.0"
-  },
   "devDependencies": {
-    "@lhci/cli": "^0.14.0",
+    "@lhci/cli": "^0.15.1",
     "@playwright/test": "^1.49.1",
     "@types/node": "^22.10.7",
     "@types/nodemailer": "^6.4.24",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "@types/sanitize-html": "^2.16.1",
+    "cross-env": "^7.0.3",
     "eslint": "^9.18.0",
     "eslint-config-next": "^15.1.6",
     "eslint-plugin-react": "^7.37.5",
@@ -52,5 +50,8 @@
     "prisma": "^6.19.3",
     "typescript": "^5.7.3",
     "vitest": "^3.2.6"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
   }
 }
