@@ -17,11 +17,14 @@
 
 import { isOutboundHostAllowed } from "@/integrations/domain/hostname";
 import type { HostingTier } from "../catalog";
+import { isVercelConfigured } from "../service";
 import {
   mockContainerBackend,
   mockKubernetesBackend,
   mockStaticBackend,
 } from "./mockBackends";
+import { vercelStaticBackend } from "./vercelStaticBackend";
+import { railwayContainerBackend } from "./railwayBackend";
 import type { HostingTierBackend } from "./types";
 
 export type { HostingTierBackend, TierOpResult } from "./types";
@@ -37,16 +40,18 @@ export function isManagedHostingConfigured(): boolean {
 }
 
 /**
- * Select the tier backend for a (vetted) tier. W5: always the mock backend. A
- * live build reads the cloud-credential envs here and substitutes a live adapter
- * for the matching tier, behind the same interface.
+ * Select the tier backend for a (vetted) tier. Live adapters are activated by
+ * their respective env vars; fall back to the deterministic mock when unset.
+ *   static     → Vercel (live when VERCEL_TOKEN set, else mock)
+ *   container  → Railway (live when RAILWAY_API_TOKEN set, else mock)
+ *   kubernetes → operator cluster (always mock until K8S_OPERATOR_KUBECONFIG)
  */
 export function selectTierBackend(tier: HostingTier): HostingTierBackend {
   switch (tier) {
     case "static":
-      return mockStaticBackend;
+      return isVercelConfigured() ? vercelStaticBackend : mockStaticBackend;
     case "container":
-      return mockContainerBackend;
+      return process.env.RAILWAY_API_TOKEN ? railwayContainerBackend : mockContainerBackend;
     case "kubernetes":
       return mockKubernetesBackend;
   }

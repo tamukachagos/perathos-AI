@@ -20,6 +20,7 @@ import { createHash } from "node:crypto";
 import type { Repositories, SiteRepoRecord } from "@/lib/db/types";
 import { env } from "@/lib/env";
 import { logger } from "@/lib/logger";
+import { liveEnsureRepo, liveCommitVersion } from "./liveService";
 
 /** The operator org repos live under. Overridable via GITHUB_APP_ORG. */
 export function operatorOrg(): string {
@@ -65,6 +66,9 @@ export async function ensureSiteRepo(
     repoUrl,
     defaultBranch: "main",
   });
+  if (isGithubAppConfigured()) {
+    await liveEnsureRepo(operatorOrg(), slug);
+  }
   logger.info("github.createRepo", {
     slug,
     mode: env.adapterMode,
@@ -112,7 +116,9 @@ export async function commitPublish(
   },
 ): Promise<CommitResult> {
   const repo = await ensureSiteRepo(repos, params.tenantId, params.slug);
-  const commitSha = mockCommitSha(params.slug, params.version, params.payloadHash);
+  const commitSha = isGithubAppConfigured()
+    ? await liveCommitVersion(operatorOrg(), params.slug, params.version, params.payloadHash)
+    : mockCommitSha(params.slug, params.version, params.payloadHash);
   const updated = await repos.siteRepos.update(params.tenantId, repo.id, {
     lastCommitSha: commitSha,
   });

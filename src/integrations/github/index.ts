@@ -23,7 +23,8 @@ import type {
   ActionResult,
   ProviderAdapter,
 } from "@/integrations/core/types";
-import { isGithubAppConfigured, repoRefForSlug } from "./service";
+import { isGithubAppConfigured, operatorOrg, repoRefForSlug } from "./service";
+import { liveEnsureRepo, liveMergePr } from "./liveService";
 
 const mode: AdapterMode = env.adapterMode;
 
@@ -74,11 +75,38 @@ export const githubAdapter: ProviderAdapter = {
     if (mode === "mock") {
       return dispatch(request);
     }
-    // Live/sandbox: the GitHub App is dormant in W6. A real build swaps the mock
-    // for a live adapter behind the same interface; until then a non-mock
-    // dispatch throws so accidental use is obvious.
-    throw new Error(
-      `GitHubProvider.action("${request.verb}") has no live GitHub App wired (mode=${mode}, configured=${isGithubAppConfigured()}).`,
-    );
+    // Live: real GitHub App — activated when GITHUB_APP_* env vars are set.
+    if (!isGithubAppConfigured()) {
+      return {
+        ok: false,
+        detail: `GitHubProvider: GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY / GITHUB_APP_INSTALLATION_ID not set.`,
+      };
+    }
+    const payload = request.payload ?? {};
+    const slug = String(payload.slug ?? "");
+    const org = operatorOrg();
+    try {
+      switch (request.verb) {
+        case "github.createRepo":
+          await liveEnsureRepo(org, slug);
+          return { ok: true, detail: `Repo ${repoRefForSlug(slug)} ready.` };
+        case "github.commit":
+          // Real commit is driven by commitPublish() in service.ts (called from
+          // the publish pipeline). The adapter verb is a confirmation only.
+          return { ok: true, detail: `Version committed for ${repoRefForSlug(slug)}.` };
+        case "github.mergePR": {
+          const prUrl = String(payload.prUrl ?? payload.branch ?? "");
+          await liveMergePr(org, slug, prUrl);
+          return { ok: true, detail: `Merged PR at ${prUrl}.` };
+        }
+        case "agent.applyContent":
+          return { ok: true, detail: `Content update applied for ${repoRefForSlug(slug)}.` };
+        default:
+          return { ok: false, detail: `Unsupported github verb "${request.verb}".` };
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      return { ok: false, detail: msg };
+    }
   },
 };

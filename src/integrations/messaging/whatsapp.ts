@@ -30,6 +30,7 @@ import {
 import { normalizeWhatsapp } from "@/lib/format";
 import { sanitizeUrl } from "@/lib/sanitize";
 import { logger } from "@/lib/logger";
+import { bspPublishCatalog, bspSendText, isWhatsappBspConfigured } from "./bspAdapter";
 
 /** Whether a message category is billable (everything but a service reply). */
 export function isBillableCategory(category: WhatsappMessageCategory): boolean {
@@ -48,6 +49,8 @@ export interface SendMessageInput {
   category: WhatsappMessageCategory;
   /** Exactly-once accounting key; a retry re-attaches rather than re-charging. */
   idempotencyKey: string;
+  /** Message body text. Required for live BSP dispatch; omit in mock mode. */
+  body?: string;
 }
 
 export interface SendMessageResult {
@@ -81,6 +84,9 @@ export async function sendWhatsappMessage(
   if (unitCostMicro <= 0n) {
     const balanceMicro = await repos.wallet.getBalance(input.tenantId);
     logger.info("whatsapp.message_free", { category: input.category });
+    if (isWhatsappBspConfigured() && input.body) {
+      await bspSendText(input.to, input.body);
+    }
     return {
       charged: false,
       amountMicro: 0n,
@@ -96,6 +102,12 @@ export async function sendWhatsappMessage(
     unitCostMicro,
     idempotencyKey: input.idempotencyKey,
   });
+  // Dispatch the real BSP call only after the wallet has been successfully
+  // charged. A duplicate idempotency key (result.applied === false) means the
+  // message was already sent — skip re-dispatch to avoid double-delivery.
+  if (result.applied && isWhatsappBspConfigured() && input.body) {
+    await bspSendText(input.to, input.body);
+  }
   return {
     charged: result.applied,
     amountMicro: result.applied ? result.amountMicro : 0n,
@@ -122,6 +134,16 @@ export async function publishCatalog(
 ): Promise<PublishCatalogResult> {
   const products = await repos.products.list(tenantId);
   const available = products.filter((p) => p.available);
+  if (isWhatsappBspConfigured()) {
+    await bspPublishCatalog(
+      available.map((p) => ({
+        id: p.id,
+        name: p.name,
+        priceCents: p.priceCents,
+        available: p.available,
+      })),
+    );
+  }
   return {
     productCount: available.length,
     detail: `Published ${available.length} product${

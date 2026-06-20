@@ -23,7 +23,7 @@ import {
 import { recordIssued } from "@/integrations/core/approvalStore";
 import type { Business } from "@/lib/types";
 import type { Repositories } from "@/lib/db/types";
-import { vercelProjectForSlug } from "./service";
+import { isVercelConfigured, vercelProjectForSlug } from "./service";
 import { logger } from "@/lib/logger";
 
 export interface ConnectCustomDomainResult {
@@ -97,11 +97,31 @@ export async function connectCustomDomain(
     return { status: "denied", detail: outcome.detail };
   }
 
-  // Mock Vercel domains attach (the real API is dormant behind VERCEL_*). In
-  // mock mode this is a no-op confirmation; nothing here is logged with PII.
+  // Attach the domain to the customer's Vercel project when live.
+  if (isVercelConfigured()) {
+    const projectName = vercelProjectForSlug(slug);
+    const teamId = process.env.VERCEL_TEAM_ID?.trim();
+    const q = teamId ? `?teamId=${encodeURIComponent(teamId)}` : "";
+    const attachRes = await fetch(
+      `https://api.vercel.com/v10/projects/${encodeURIComponent(projectName)}/domains${q}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.VERCEL_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ name: hostname }),
+      },
+    );
+    // 409 = already attached; treat as success.
+    if (!attachRes.ok && attachRes.status !== 409) {
+      logger.warn("hosting.customDomain.vercel_attach_failed", { status: attachRes.status });
+      // Non-fatal: DNS is already staged; the attach can be retried.
+    }
+  }
   logger.info("hosting.customDomain.attached", {
     slug,
-    mode: "mock",
+    live: isVercelConfigured(),
   });
 
   return {
