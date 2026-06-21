@@ -19,6 +19,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { Send, Sparkles, UserRound } from "lucide-react";
 import type { Business } from "@/lib/types";
+import { SITE_TEMPLATES } from "@/lib/templates";
 import {
   chatReducer,
   emptyChat,
@@ -211,13 +212,27 @@ export function AssistantConsole({
     });
   }
 
+  function applyTemplate(business: Business, label: string) {
+    onApplyProfile(business);
+    dispatch({
+      type: "reply",
+      id: nextId(),
+      text: `I've loaded the ${label} template. Update your business name, phone number, and location in Profile — then open Preview to see your site.`,
+      card: { kind: "open-preview", label: "Open Preview" },
+      at: new Date().toISOString(),
+    });
+  }
+
   const showLiveCard = publishedSlug !== null;
 
   return (
     <div className="studio-console">
       <div className="studio-thread" ref={threadRef} aria-live="polite">
         {state.messages.length === 0 ? (
-          <EmptyState onPick={(p) => void submit(p)} />
+          <EmptyState
+            onPick={(p) => void submit(p)}
+            onApplyTemplate={applyTemplate}
+          />
         ) : (
           state.messages.map((m) => (
             <MessageBubble
@@ -268,17 +283,34 @@ export function AssistantConsole({
   );
 }
 
-function EmptyState({ onPick }: { onPick: (prompt: string) => void }) {
+function EmptyState({
+  onPick,
+  onApplyTemplate,
+}: {
+  onPick: (prompt: string) => void;
+  onApplyTemplate: (business: Business, label: string) => void;
+}) {
   return (
     <div className="studio-empty">
       <div className="studio-empty-mark">
         <Sparkles size={22} />
       </div>
       <h2>What would you like to build today?</h2>
-      <p>
-        Describe your business in plain words, or ask for a change. I&apos;ll draft
-        it, show you a preview, and only ask you to approve the things that matter.
-      </p>
+      <p>Pick your industry to get a site ready in seconds, or describe your business below.</p>
+      <div className="studio-templates">
+        {SITE_TEMPLATES.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className="studio-template-btn"
+            onClick={() => onApplyTemplate(t.business, t.label)}
+          >
+            <span className="studio-template-emoji" aria-hidden="true">{t.emoji}</span>
+            <span className="studio-template-label">{t.label}</span>
+          </button>
+        ))}
+      </div>
+      <div className="studio-divider"><span>or describe it yourself</span></div>
       <div className="studio-examples">
         {EXAMPLE_PROMPTS.map((p) => (
           <button key={p} type="button" onClick={() => onPick(p)}>
