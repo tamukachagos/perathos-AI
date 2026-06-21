@@ -17,6 +17,7 @@ import type {
   LlmCompletion,
   LlmInput,
   LlmProvider,
+  LlmTier,
   LlmUsage,
 } from "./types";
 
@@ -258,6 +259,9 @@ export function imageStubProvider(): LlmProvider {
  * Select the active TEXT/CODE/REASONING provider from env. MOCK by default;
  * OpenRouter when its key is set; else direct Anthropic when its key is set.
  * (Image tasks bypass this and always use the image stub — see router.ts.)
+ *
+ * Kept for backward-compat (tests + external callers). The router uses
+ * selectLlmProviderForTier() for hybrid routing.
  */
 export function selectLlmProvider(): LlmProvider {
   const openrouter = process.env.OPENROUTER_API_KEY?.trim();
@@ -265,6 +269,38 @@ export function selectLlmProvider(): LlmProvider {
   const anthropic = process.env.ANTHROPIC_API_KEY?.trim();
   if (anthropic) return anthropicLlmProvider(anthropic);
   return mockLlmProvider();
+}
+
+/**
+ * Tier-aware provider selection for hybrid routing.
+ *
+ * CHEAP/IMAGE tiers are OSS-first: their model slugs (Llama, Qwen, Deepseek,
+ * Flux) only exist on OpenRouter, so OpenRouter is preferred and Anthropic is
+ * the fallback when no OR key is set.
+ *
+ * CODE/PREMIUM tiers use Anthropic models (claude-sonnet-4-6 / claude-opus-4-8):
+ * prefer the direct Anthropic SDK (no intermediary markup); OpenRouter is the
+ * fallback when only its key is set (it can route to Anthropic models too).
+ *
+ * With BOTH keys set: CHEAP/IMAGE go through OpenRouter (cheap OSS), CODE/PREMIUM
+ * stay on direct Anthropic (no markup). With only one key set, all tiers fall
+ * back to that provider.
+ */
+export function selectLlmProviderForTier(tier: LlmTier): LlmProvider {
+  const openrouter = process.env.OPENROUTER_API_KEY?.trim();
+  const anthropic = process.env.ANTHROPIC_API_KEY?.trim();
+  switch (tier) {
+    case "CHEAP":
+    case "IMAGE":
+      if (openrouter) return openRouterProvider(openrouter);
+      if (anthropic) return anthropicLlmProvider(anthropic);
+      return mockLlmProvider();
+    case "CODE":
+    case "PREMIUM":
+      if (anthropic) return anthropicLlmProvider(anthropic);
+      if (openrouter) return openRouterProvider(openrouter);
+      return mockLlmProvider();
+  }
 }
 
 /** The active provider's name (for logging/telemetry — never PII/keys). */

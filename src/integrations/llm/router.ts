@@ -32,7 +32,7 @@ import {
 } from "./policy";
 import {
   imageStubProvider,
-  selectLlmProvider,
+  selectLlmProviderForTier,
 } from "./provider";
 import { cacheGet, cacheKey, cacheSet } from "./cache";
 import { meterLlmUsage } from "./meter";
@@ -146,9 +146,10 @@ function passesQuality(input: LlmInput, completion: LlmCompletion): boolean {
   }
 }
 
-/** The provider for a task: image tasks use the STUB; everything else env-selected. */
+/** The provider for a task: image tasks use the STUB; text/code/reason use tier-aware selection. */
 function providerForTask(task: LlmTask): LlmProvider {
-  return isImageTask(task) ? imageStubProvider() : selectLlmProvider();
+  if (isImageTask(task)) return imageStubProvider();
+  return selectLlmProviderForTier(tierForTask(task));
 }
 
 /**

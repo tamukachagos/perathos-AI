@@ -8,7 +8,7 @@
 export { routeLlm } from "./router";
 export type { RouteDeps, RouteParams, RouteOutcome } from "./router";
 
-export { selectLlmProvider, activeProviderName } from "./provider";
+export { selectLlmProvider, selectLlmProviderForTier, activeProviderName } from "./provider";
 export {
   tierForTask,
   modelsForTask,

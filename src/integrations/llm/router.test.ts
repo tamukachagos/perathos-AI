@@ -20,6 +20,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 import {
   selectLlmProvider,
+  selectLlmProviderForTier,
   modelsForTask,
   modelsForTier,
   tierForTask,
@@ -80,6 +81,42 @@ describe("provider selection", () => {
   it("selects Anthropic when only ANTHROPIC_API_KEY is set", () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-test";
     expect(selectLlmProvider().name).toBe("anthropic");
+  });
+
+  describe("selectLlmProviderForTier — hybrid routing", () => {
+    it("CHEAP uses OpenRouter when both keys set (OSS models live there)", () => {
+      process.env.OPENROUTER_API_KEY = "sk-or-test";
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+      expect(selectLlmProviderForTier("CHEAP").name).toBe("openrouter");
+    });
+
+    it("CODE uses direct Anthropic when both keys set (no markup)", () => {
+      process.env.OPENROUTER_API_KEY = "sk-or-test";
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+      expect(selectLlmProviderForTier("CODE").name).toBe("anthropic");
+    });
+
+    it("PREMIUM uses direct Anthropic when both keys set (no markup)", () => {
+      process.env.OPENROUTER_API_KEY = "sk-or-test";
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+      expect(selectLlmProviderForTier("PREMIUM").name).toBe("anthropic");
+    });
+
+    it("CODE falls back to OpenRouter when only OPENROUTER_API_KEY is set", () => {
+      process.env.OPENROUTER_API_KEY = "sk-or-test";
+      expect(selectLlmProviderForTier("CODE").name).toBe("openrouter");
+    });
+
+    it("CHEAP falls back to Anthropic when only ANTHROPIC_API_KEY is set", () => {
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+      expect(selectLlmProviderForTier("CHEAP").name).toBe("anthropic");
+    });
+
+    it("returns mock when no keys set (any tier)", () => {
+      expect(selectLlmProviderForTier("CHEAP").name).toBe("mock");
+      expect(selectLlmProviderForTier("CODE").name).toBe("mock");
+      expect(selectLlmProviderForTier("PREMIUM").name).toBe("mock");
+    });
   });
 
   it("the mock provider returns synthetic usage and never hits the network", async () => {
