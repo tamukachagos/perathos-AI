@@ -19,6 +19,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { Send, Sparkles, UserRound } from "lucide-react";
 import type { Business } from "@/lib/types";
+import { QuickLaunch } from "@/components/dashboard/QuickLaunch";
 import {
   chatReducer,
   emptyChat,
@@ -217,7 +218,11 @@ export function AssistantConsole({
     <div className="studio-console">
       <div className="studio-thread" ref={threadRef} aria-live="polite">
         {state.messages.length === 0 ? (
-          <EmptyState onPick={(p) => void submit(p)} />
+          <EmptyState
+            onPick={(p) => void submit(p)}
+            onApplyProfile={onApplyProfile}
+            onOpenPreview={onOpenPreview}
+          />
         ) : (
           state.messages.map((m) => (
             <MessageBubble
@@ -268,7 +273,17 @@ export function AssistantConsole({
   );
 }
 
-function EmptyState({ onPick }: { onPick: (prompt: string) => void }) {
+function EmptyState({
+  onPick,
+  onApplyProfile,
+  onOpenPreview,
+}: {
+  onPick: (prompt: string) => void;
+  onApplyProfile: (profile: Business) => void;
+  onOpenPreview: () => void;
+}) {
+  const [showQuickLaunch, setShowQuickLaunch] = useState(true);
+
   return (
     <div className="studio-empty">
       <div className="studio-empty-mark">
@@ -279,6 +294,38 @@ function EmptyState({ onPick }: { onPick: (prompt: string) => void }) {
         Describe your business in plain words, or ask for a change. I&apos;ll draft
         it, show you a preview, and only ask you to approve the things that matter.
       </p>
+
+      {/* 1. QuickLaunch fast-lane card */}
+      {showQuickLaunch ? (
+        <div style={{ width: "100%", maxWidth: 540, marginBottom: 0 }}>
+          <QuickLaunch
+            onApplyProfile={onApplyProfile}
+            onOpenPreview={onOpenPreview}
+            onSkip={() => setShowQuickLaunch(false)}
+          />
+        </div>
+      ) : null}
+
+      {/* 2. Divider */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          width: "100%",
+          maxWidth: 540,
+          margin: "16px 0 8px",
+          color: "var(--muted)",
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+        <span>or describe it yourself</span>
+        <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+      </div>
+
+      {/* 3. Example prompt buttons */}
       <div className="studio-examples">
         {EXAMPLE_PROMPTS.map((p) => (
           <button key={p} type="button" onClick={() => onPick(p)}>

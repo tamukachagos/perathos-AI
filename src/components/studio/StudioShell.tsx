@@ -19,16 +19,24 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Activity as ActivityIcon,
+  BarChart2,
+  BookOpen,
   CheckCircle2,
   CreditCard,
+  FileText,
   Globe2,
   LayoutGrid,
   LogIn,
+  Mail,
   MessageCircle,
+  Megaphone,
+  Package,
   PanelLeft,
   Server,
   Settings as SettingsIcon,
   Sparkles,
+  Star,
+  Users,
   Wallet,
 } from "lucide-react";
 import type { Business, PublishedSites } from "@/lib/types";
@@ -56,6 +64,17 @@ import { GbpStep } from "@/components/dashboard/GbpStep";
 import { AgentTeamPanel } from "@/components/dashboard/AgentTeamPanel";
 import { CreditsPanel } from "@/components/billing/CreditsPanel";
 import { ApprovalDialog } from "@/components/dashboard/ApprovalDialog";
+import { AnalyticsDashboard } from "@/components/dashboard/AnalyticsDashboard";
+import { BookingsDashboard } from "@/components/dashboard/BookingsDashboard";
+import { BrandKitDashboard } from "@/components/dashboard/BrandKitDashboard";
+import { CrmDashboard } from "@/components/dashboard/CrmDashboard";
+import { EmailMarketingDashboard } from "@/components/dashboard/EmailMarketingDashboard";
+import { InvoicingDashboard } from "@/components/dashboard/InvoicingDashboard";
+import { MarketingControlCenter } from "@/components/dashboard/MarketingControlCenter";
+import { PagesDashboard } from "@/components/dashboard/PagesDashboard";
+import { ReviewsDashboard } from "@/components/dashboard/ReviewsDashboard";
+import { SmsDashboard } from "@/components/dashboard/SmsDashboard";
+import { SocialDashboard } from "@/components/dashboard/SocialDashboard";
 
 // Gated checklist keys → ActionRouter verb + the approval payload. Mirrors the
 // old Dashboard map so the assistant's approval cards reuse the same flow.
@@ -105,7 +124,15 @@ type Section =
   | "credits"
   | "activity"
   | "hosting"
-  | "settings";
+  | "settings"
+  | "analytics"
+  | "bookings"
+  | "crm"
+  | "invoicing"
+  | "pages"
+  | "brand"
+  | "marketing"
+  | "reviews";
 
 interface SectionDef {
   key: Section;
@@ -120,6 +147,14 @@ const SECTIONS: SectionDef[] = [
   { key: "domain", label: "Domain", icon: Globe2, group: "business" },
   { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, group: "business" },
   { key: "gbp", label: "Google", icon: LayoutGrid, group: "business" },
+  { key: "analytics", label: "Analytics", icon: BarChart2, group: "business" },
+  { key: "bookings", label: "Bookings", icon: BookOpen, group: "business" },
+  { key: "crm", label: "CRM", icon: Users, group: "business" },
+  { key: "invoicing", label: "Invoicing", icon: FileText, group: "business" },
+  { key: "pages", label: "Pages", icon: Package, group: "business" },
+  { key: "brand", label: "Brand", icon: Megaphone, group: "business" },
+  { key: "marketing", label: "Marketing", icon: Mail, group: "business" },
+  { key: "reviews", label: "Reviews", icon: Star, group: "business" },
   { key: "credits", label: "Credits", icon: Wallet, group: "business" },
   { key: "activity", label: "Activity", icon: ActivityIcon, group: "business" },
   { key: "hosting", label: "Hosting", icon: Server, group: "business" },
@@ -132,6 +167,14 @@ const SECTION_TITLE: Record<Section, string> = {
   domain: "Your web address",
   whatsapp: "Sell on WhatsApp",
   gbp: "Get found on Google",
+  analytics: "Analytics",
+  bookings: "Bookings",
+  crm: "CRM",
+  invoicing: "Invoicing",
+  pages: "Pages",
+  brand: "Brand Kit",
+  marketing: "Marketing",
+  reviews: "Reviews",
   credits: "Credits",
   activity: "Activity",
   hosting: "Hosting",
@@ -566,6 +609,37 @@ function SectionContent({
           onNotice={onNotice}
         />
       );
+    case "analytics":
+      return <AnalyticsDashboard />;
+    case "bookings":
+      return <BookingsDashboard slug={slug ?? ""} />;
+    case "crm":
+      return <CrmDashboard />;
+    case "invoicing":
+      return (
+        <InvoicingDashboard authenticated={authenticated} onNotice={onNotice} />
+      );
+    case "pages":
+      return (
+        <PagesDashboard
+          businessName={business.name}
+          industry={business.industry}
+        />
+      );
+    case "brand":
+      return (
+        <BrandKitDashboard business={business} authenticated={authenticated} />
+      );
+    case "marketing":
+      return (
+        <MarketingSection
+          business={business}
+          planName={planName}
+          authenticated={authenticated}
+        />
+      );
+    case "reviews":
+      return <ReviewsDashboard />;
     case "credits":
       return creditsState ? (
         <CreditsPanel initialState={creditsState} />
@@ -589,6 +663,85 @@ function SectionContent({
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Marketing section — MarketingControlCenter at top, then Social / Email / SMS
+// in sub-tabs so each only loads when selected (lazy).
+// ---------------------------------------------------------------------------
+
+type MarketingSubTab = "social" | "email" | "sms";
+
+function MarketingSection({
+  business,
+  planName,
+  authenticated: _authenticated,
+}: {
+  business: Business;
+  planName: string;
+  authenticated: boolean;
+}) {
+  const [subTab, setSubTab] = useState<MarketingSubTab>("social");
+
+  // Derive a rough plan tier understood by MarketingControlCenter.
+  const planTier: "free" | "growth" | "pro" = planName
+    .toLowerCase()
+    .startsWith("pro")
+    ? "pro"
+    : planName.toLowerCase().startsWith("growth")
+      ? "growth"
+      : "free";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      {/* Agent control center at the top */}
+      <MarketingControlCenter planTier={planTier} />
+
+      {/* Sub-tab bar */}
+      <div
+        role="tablist"
+        aria-label="Marketing channels"
+        style={{ display: "flex", gap: 8, borderBottom: "1px solid var(--border)", paddingBottom: 0 }}
+      >
+        {(
+          [
+            { key: "social" as const, label: "Social" },
+            { key: "email" as const, label: "Email" },
+            { key: "sms" as const, label: "SMS" },
+          ] satisfies { key: MarketingSubTab; label: string }[]
+        ).map(({ key, label }) => (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={subTab === key}
+            onClick={() => setSubTab(key)}
+            style={{
+              padding: "6px 16px",
+              border: "none",
+              borderBottom: subTab === key ? "2px solid var(--accent, #6366f1)" : "2px solid transparent",
+              background: "none",
+              cursor: "pointer",
+              fontWeight: subTab === key ? 600 : 400,
+              color: subTab === key ? "var(--accent, #6366f1)" : "inherit",
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Channel panels — only mount the active one */}
+      {subTab === "social" && (
+        <SocialDashboard
+          businessName={business.name}
+          industry={business.industry}
+        />
+      )}
+      {subTab === "email" && <EmailMarketingDashboard />}
+      {subTab === "sms" && <SmsDashboard />}
+    </div>
+  );
 }
 
 function SignInPrompt({ title, body }: { title: string; body: string }) {

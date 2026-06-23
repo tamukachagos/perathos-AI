@@ -14,6 +14,7 @@ import { getRepositories } from "@/lib/db";
 import { sanitizeText } from "@/lib/sanitize";
 import { PROCESSING_PURPOSE, retentionUntil } from "@/lib/popia";
 import { logger } from "@/lib/logger";
+import { getProvider } from "@/integrations/crm";
 
 export const dynamic = "force-dynamic";
 
@@ -153,6 +154,27 @@ export async function POST(request: NextRequest) {
     leadId: lead.id,
     marketingOptIn: lead.marketingOptIn,
   });
+
+  // CRM integration: upsert a contact so the lead flows into the pipeline.
+  // Wrapped in try/catch — a CRM failure MUST NOT prevent the lead from being
+  // saved (the lead record is already persisted above).
+  try {
+    const crm = getProvider();
+    await crm.upsertContact(site.tenantId, {
+      name,
+      // `contact` may be a phone number or email; detect by @ sign.
+      phone: contact.includes("@") ? undefined : contact,
+      email: contact.includes("@") ? contact : undefined,
+      source: "lead-form",
+      stage: "new",
+    });
+  } catch (crmErr) {
+    logger.warn("crm.upsert.failed", {
+      slug,
+      leadId: lead.id,
+      error: crmErr instanceof Error ? crmErr.message : String(crmErr),
+    });
+  }
 
   return NextResponse.json({ ok: true, id: lead.id }, { status: 201 });
 }

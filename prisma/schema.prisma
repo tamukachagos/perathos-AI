@@ -974,3 +974,168 @@ model AgentPolicy {
   @@index([tenantId])
   @@map("agent_policies")
 }
+
+model Booking {
+  id            String   @id @default(cuid())
+  tenantId      String
+  siteSlug      String
+  customerName  String
+  customerPhone String
+  service       String
+  date          String
+  time          String
+  status        String   @default("pending")
+  notes         String?
+  whatsappSent  Boolean  @default(false)
+  reminderSent  Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([siteSlug])
+  @@index([date])
+}
+
+model CustomerInvoice {
+  id            String   @id @default(cuid())
+  tenantId      String
+  number        String
+  customerName  String
+  customerEmail String?
+  customerPhone String?
+  items         Json
+  subtotalCents BigInt
+  taxCents      BigInt   @default(0)
+  totalCents    BigInt
+  status        String   @default("draft")
+  dueDate       String?
+  pdfUrl        String?
+  paymentRef    String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model CrmContact {
+  id            String    @id @default(cuid())
+  tenantId      String
+  name          String
+  phone         String?
+  email         String?
+  source        String    @default("manual")
+  stage         String    @default("new")
+  notes         String?
+  tags          String[]  @default([])
+  lastContactAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([stage])
+}
+
+model EmailCampaign {
+  id             String    @id @default(cuid())
+  tenantId       String
+  name           String
+  subject        String
+  bodyHtml       String
+  status         String    @default("draft")
+  scheduledAt    DateTime?
+  sentAt         DateTime?
+  recipientCount Int       @default(0)
+  openCount      Int       @default(0)
+  clickCount     Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+}
+
+model SocialPost {
+  id          String    @id @default(cuid())
+  tenantId    String
+  content     String
+  imageUrl    String?
+  platforms   String[]
+  scheduledAt DateTime?
+  postedAt    DateTime?
+  status      String    @default("draft")
+  externalIds Json?
+  error       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId])
+  @@index([status])
+  @@index([scheduledAt])
+}
+
+model BrandKit {
+  id             String   @id @default(cuid())
+  tenantId       String   @unique
+  logoUrl        String?
+  logoPrompt     String?
+  primaryColor   String?
+  secondaryColor String?
+  accentColor    String?
+  fontFamily     String?
+  tagline        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model ReviewRecord {
+  id          String    @id @default(cuid())
+  tenantId    String
+  source      String
+  rating      Int
+  text        String
+  authorName  String
+  authorPhoto String?
+  response    String?
+  respondedAt DateTime?
+  externalId  String?
+  publishedAt DateTime?
+  featured    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+
+  @@index([tenantId])
+  @@index([rating])
+}
+
+model MarketingRun {
+  id         String    @id @default(cuid())
+  tenantId   String?
+  agentType  String
+  status     String    @default("running")
+  result     Json?
+  tokensUsed Int       @default(0)
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+
+  @@index([tenantId])
+  @@index([agentType])
+  @@index([startedAt])
+}
+
+model SitePage {
+  id        String   @id @default(cuid())
+  tenantId  String
+  siteSlug  String
+  path      String
+  title     String
+  metaDesc  String?
+  blocks    Json
+  published Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([siteSlug, path])
+  @@index([tenantId])
+  @@index([siteSlug])
+}
