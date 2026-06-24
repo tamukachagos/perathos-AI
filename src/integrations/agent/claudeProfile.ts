@@ -41,6 +41,10 @@ export interface AgentMeterContext {
   repos: Repositories;
   tenantId: string;
   idempotencyKey: string;
+  /** BCP-47 locale for generated offer/services text. Defaults to "en". */
+  locale?: string;
+  /** ISO 3166-1 alpha-2 country code for cultural localisation. Defaults to "US". */
+  countryCode?: string;
 }
 
 /** The descriptive fields Claude fills. Contact fields stay blank for the owner. */
@@ -146,6 +150,15 @@ export async function generateBusinessProfileWithClaude(
     // Lazy import: keeps the router + server-only billing deps out of the
     // client bundle (see the note at the top of this file).
     const { routeLlm } = await import("@/integrations/llm");
+
+    // Build locale-aware user message: append language instruction for non-English.
+    const locale = ctx.locale ?? "en";
+    const countryCode = ctx.countryCode ?? "US";
+    const langSuffix = locale !== "en"
+      ? `\n\nGenerate the "offer" and "services" fields in ${locale} language, culturally appropriate for ${countryCode}. All other fields (name, industry, location, tone) may remain in English.`
+      : "";
+    const userMessage = description + langSuffix;
+
     const outcome = await routeLlm(
       { wallet: ctx.wallet, audit: ctx.audit, repos: ctx.repos },
       {
@@ -154,7 +167,7 @@ export async function generateBusinessProfileWithClaude(
         idempotencyKey: ctx.idempotencyKey,
         input: {
           system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: description }],
+          messages: [{ role: "user", content: userMessage }],
           maxTokens: 1024,
           expectJson: looksLikeProfile,
         },

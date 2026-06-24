@@ -90,6 +90,13 @@ interface Body {
 }
 
 export async function POST(request: Request) {
+  // Geo-detection headers (set by middleware or CDN/edge layer)
+  const locale      = request.headers.get("x-detected-locale")   ?? "en";
+  const currency    = request.headers.get("x-detected-currency") ?? "USD";
+  const region      = request.headers.get("x-detected-region")   ?? "us-east";
+  const countryCode = request.headers.get("x-detected-country")  ?? "US";
+  const timezone    = request.headers.get("x-detected-timezone") ?? "UTC";
+
   let body: Body;
   try {
     body = (await request.json()) as Body;
@@ -133,9 +140,14 @@ export async function POST(request: Request) {
     .join(" ")
     .trim();
 
+  // Build an optional language instruction for non-English locales.
+  const langInstruction = locale !== "en"
+    ? ` Generate the business offer and services in ${locale} language, culturally appropriate for ${countryCode}.`
+    : "";
+
   // Step (b): Run through the existing profile generator (deterministic heuristic
   // with no API key required; Claude is used automatically when the key is set).
-  const { profile: derived } = deriveProfile(syntheticDescription);
+  const { profile: derived } = deriveProfile(syntheticDescription + langInstruction);
 
   // Step (c): Look up a template-specific offer + services for the chosen
   // industry, then merge the user's explicit field values over everything.
@@ -174,14 +186,19 @@ export async function POST(request: Request) {
     }
   }
 
-  // Step (e): Return the profile + domain suggestion. Auth-aware persistence
-  // (storing to the tenant's DB) is handled client-side after onApplyProfile()
-  // calls the existing profile-save flow; this endpoint stays stateless so it
-  // is safe for anonymous users too.
+  // Step (e): Return the profile + domain suggestion + detected geo data.
+  // Auth-aware persistence (storing to the tenant's DB) is handled client-side
+  // after onApplyProfile() calls the existing profile-save flow; this endpoint
+  // stays stateless so it is safe for anonymous users too.
   return NextResponse.json({
     ok: true,
     profile,
     suggestedDomain,
     available,
+    locale,
+    currency,
+    region,
+    countryCode,
+    timezone,
   });
 }

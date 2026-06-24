@@ -155,19 +155,24 @@ model Membership {
 // ---------------------------------------------------------------------------
 
 model Business {
-  id        String   @id @default(cuid())
-  tenantId  String
-  name      String
-  industry  String   @default("")
-  location  String   @default("")
-  whatsapp  String   @default("")
-  domainName String  @default("")
-  email     String   @default("")
-  tone      String   @default("")
-  offer     String   @default("")
-  services  String   @default("")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  industry    String   @default("")
+  location    String   @default("")
+  whatsapp    String   @default("")
+  domainName  String   @default("")
+  email       String   @default("")
+  tone        String   @default("")
+  offer       String   @default("")
+  services    String   @default("")
+  locale      String   @default("en")
+  currency    String   @default("USD")
+  region      String   @default("us-east")
+  timezone    String   @default("UTC")
+  countryCode String   @default("US")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   generatedSites GeneratedSite[]
@@ -1138,4 +1143,23 @@ model SitePage {
   @@unique([siteSlug, path])
   @@index([tenantId])
   @@index([siteSlug])
+}
+
+// ---------------------------------------------------------------------------
+// GlobalPricingPlan — per-currency plan pricing catalog. Enables localised
+// pricing (e.g. ZAR, NGN, KES) and maps each plan/currency pair to its
+// Stripe Price id or Paystack plan code for checkout.
+// ---------------------------------------------------------------------------
+
+model GlobalPricingPlan {
+  id               String   @id @default(cuid())
+  planKey          String
+  currency         String
+  priceCents       Int
+  stripePriceId    String?
+  paystackPlanCode String?
+  createdAt        DateTime @default(now())
+
+  @@unique([planKey, currency])
+  @@index([currency])
 }

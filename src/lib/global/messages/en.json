@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Studio", "preview": "Preview", "domain": "Domain",
+    "whatsapp": "WhatsApp", "analytics": "Analytics", "bookings": "Bookings",
+    "crm": "CRM", "invoicing": "Invoicing", "pages": "Pages",
+    "brand": "Brand", "marketing": "Marketing", "reviews": "Reviews"
+  },
+  "onboarding": {
+    "title": "Launch your business online in 2 minutes",
+    "subtitle": "No tech skills needed. Just describe your business.",
+    "name": "Business name", "industry": "Industry",
+    "location": "City, Country", "phone": "WhatsApp / Phone number",
+    "cta": "Launch Now", "or": "or describe it yourself",
+    "region_hint": "Your site will be hosted in"
+  },
+  "booking": {
+    "title": "Book an appointment",
+    "select_service": "Select a service", "select_date": "Choose a date",
+    "select_time": "Choose a time", "your_name": "Your name",
+    "your_phone": "Phone / WhatsApp", "submit": "Confirm booking",
+    "success": "Booking confirmed! You'll receive a WhatsApp confirmation shortly.",
+    "consent": "By booking you consent to us contacting you about your appointment."
+  },
+  "checkout": {
+    "title": "Complete your payment", "pay_now": "Pay now",
+    "order_summary": "Order summary", "total": "Total",
+    "success": "Payment received! You'll get a WhatsApp confirmation.",
+    "already_paid": "This order has already been paid."
+  },
+  "invoice": {
+    "invoice_number": "Invoice #", "due_date": "Due",
+    "status_paid": "PAID", "status_due": "Payment Due",
+    "subtotal": "Subtotal", "tax": "Tax", "total": "Total",
+    "pay_now": "Pay invoice", "print": "Print"
+  },
+  "chat": {
+    "greeting": "Hi! Welcome to {{business}}. How can we help you today?",
+    "reply_time": "Usually replies within minutes",
+    "book": "Book an appointment", "services": "Ask about our services",
+    "quote": "Get a quote", "type_message": "Type your message...",
+    "powered_by": "Powered by Perathos"
+  },
+  "reviews": { "section_title": "What our customers say" },
+  "plans": {
+    "free": "Free", "growth": "Growth", "pro": "Pro",
+    "per_month": "per month",
+    "free_desc": "Your first site, free forever",
+    "growth_desc": "Custom domain, WhatsApp commerce, social tools",
+    "pro_desc": "AI agent team, advanced analytics, priority support"
+  }
+}

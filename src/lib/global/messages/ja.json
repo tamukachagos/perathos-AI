@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "スタジオ", "preview": "プレビュー", "domain": "ドメイン",
+    "whatsapp": "WhatsApp", "analytics": "アナリティクス", "bookings": "予約",
+    "crm": "CRM", "invoicing": "請求書", "pages": "ページ",
+    "brand": "ブランド", "marketing": "マーケティング", "reviews": "レビュー"
+  },
+  "onboarding": {
+    "title": "2分でビジネスをオンラインに",
+    "subtitle": "技術的な知識は不要です。ビジネスの説明だけで大丈夫。",
+    "name": "ビジネス名", "industry": "業種",
+    "location": "市区町村、国", "phone": "WhatsApp / 電話番号",
+    "cta": "今すぐ始める", "or": "または自分で説明する",
+    "region_hint": "サイトのホスティング先"
+  },
+  "booking": {
+    "title": "予約する",
+    "select_service": "サービスを選択", "select_date": "日付を選択",
+    "select_time": "時間を選択", "your_name": "お名前",
+    "your_phone": "電話番号 / WhatsApp", "submit": "予約を確定する",
+    "success": "予約が確定しました！まもなくWhatsAppで確認メッセージが届きます。",
+    "consent": "予約することで、ご予約に関するご連絡に同意したことになります。"
+  },
+  "checkout": {
+    "title": "お支払いの完了", "pay_now": "今すぐ支払う",
+    "order_summary": "注文内容", "total": "合計",
+    "success": "お支払いを受け付けました！WhatsAppで確認メッセージが届きます。",
+    "already_paid": "この注文はすでに支払い済みです。"
+  },
+  "invoice": {
+    "invoice_number": "請求書番号", "due_date": "お支払期限",
+    "status_paid": "支払済み", "status_due": "お支払いお願いします",
+    "subtotal": "小計", "tax": "消費税", "total": "合計",
+    "pay_now": "請求書を支払う", "print": "印刷"
+  },
+  "chat": {
+    "greeting": "こんにちは！{{business}}へようこそ。本日はどのようなご用件でしょうか？",
+    "reply_time": "通常数分以内に返信します",
+    "book": "予約する", "services": "サービスについて問い合わせる",
+    "quote": "見積もりを依頼する", "type_message": "メッセージを入力...",
+    "powered_by": "Perathos 提供"
+  },
+  "reviews": { "section_title": "お客様の声" },
+  "plans": {
+    "free": "無料", "growth": "グロース", "pro": "プロ",
+    "per_month": "月額",
+    "free_desc": "最初のサイトは永久無料",
+    "growth_desc": "独自ドメイン、WhatsApp販売、ソーシャルツール",
+    "pro_desc": "AIエージェントチーム、高度な分析、優先サポート"
+  }
+}

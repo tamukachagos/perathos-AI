@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Studio", "preview": "Voorskou", "domain": "Domein",
+    "whatsapp": "WhatsApp", "analytics": "Ontledings", "bookings": "Besprekings",
+    "crm": "CRM", "invoicing": "Fakturering", "pages": "Bladsye",
+    "brand": "Handelsmerk", "marketing": "Bemarking", "reviews": "Resensies"
+  },
+  "onboarding": {
+    "title": "Lanseer jou besigheid aanlyn in 2 minute",
+    "subtitle": "Geen tegniese kennis nodig nie. Beskryf net jou besigheid.",
+    "name": "Besigheidsnaam", "industry": "Bedryf",
+    "location": "Stad, Land", "phone": "WhatsApp / Telefoonnommer",
+    "cta": "Lanseer Nou", "or": "of beskryf dit self",
+    "region_hint": "Jou webwerf sal gehuisves word in"
+  },
+  "booking": {
+    "title": "Bespreek 'n afspraak",
+    "select_service": "Kies 'n diens", "select_date": "Kies 'n datum",
+    "select_time": "Kies 'n tyd", "your_name": "Jou naam",
+    "your_phone": "Telefoon / WhatsApp", "submit": "Bevestig bespreking",
+    "success": "Bespreking bevestig! Jy sal binnekort 'n WhatsApp-bevestiging ontvang.",
+    "consent": "Deur te bespreek stem jy in dat ons jou oor jou afspraak kontak."
+  },
+  "checkout": {
+    "title": "Voltooi jou betaling", "pay_now": "Betaal nou",
+    "order_summary": "Bestellingsopsomming", "total": "Totaal",
+    "success": "Betaling ontvang! Jy sal 'n WhatsApp-bevestiging kry.",
+    "already_paid": "Hierdie bestelling is reeds betaal."
+  },
+  "invoice": {
+    "invoice_number": "Faktuur #", "due_date": "Vervaldatum",
+    "status_paid": "BETAAL", "status_due": "Betaling verskuldig",
+    "subtotal": "Subtotaal", "tax": "BTW", "total": "Totaal",
+    "pay_now": "Betaal faktuur", "print": "Druk"
+  },
+  "chat": {
+    "greeting": "Hallo! Welkom by {{business}}. Hoe kan ons jou vandag help?",
+    "reply_time": "Antwoord gewoonlik binne minute",
+    "book": "Bespreek 'n afspraak", "services": "Vra oor ons dienste",
+    "quote": "Kry 'n kwotasie", "type_message": "Tik jou boodskap...",
+    "powered_by": "Aangedryf deur Perathos"
+  },
+  "reviews": { "section_title": "Wat ons kliënte sê" },
+  "plans": {
+    "free": "Gratis", "growth": "Groei", "pro": "Pro",
+    "per_month": "per maand",
+    "free_desc": "Jou eerste webwerf, gratis vir altyd",
+    "growth_desc": "Eie domein, WhatsApp-handel, sosiale gereedskap",
+    "pro_desc": "KI-agentspan, gevorderde ontledings, voorrangondersteuning"
+  }
+}

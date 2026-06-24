@@ -96,6 +96,9 @@ async function buildContext(tenantId: string): Promise<MarketingContext | null> 
     domain: business.domainName,
     planTier: (sub?.plan as "free" | "growth" | "pro") ?? "growth",
     ownerEmail: membership?.user.email ?? undefined,
+    locale:      ((business as Record<string, unknown>).locale      as string | undefined) ?? "en",
+    currency:    ((business as Record<string, unknown>).currency    as string | undefined) ?? "USD",
+    countryCode: ((business as Record<string, unknown>).countryCode as string | undefined) ?? "ZA",
   };
 }
 
@@ -229,6 +232,9 @@ export async function runDaily(): Promise<void> {
         whatsapp: "",
         domain: "perathos.com",
         planTier: "pro",
+        locale: "en",
+        currency: "ZAR",
+        countryCode: "ZA",
       };
 
       const contentStart = new Date();

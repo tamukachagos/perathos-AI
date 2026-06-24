@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Stüdyo", "preview": "Önizleme", "domain": "Alan Adı",
+    "whatsapp": "WhatsApp", "analytics": "Analitik", "bookings": "Randevular",
+    "crm": "CRM", "invoicing": "Faturalama", "pages": "Sayfalar",
+    "brand": "Marka", "marketing": "Pazarlama", "reviews": "Yorumlar"
+  },
+  "onboarding": {
+    "title": "İşletmenizi 2 dakikada çevrimiçine taşıyın",
+    "subtitle": "Teknik bilgi gerekmez. Sadece işletmenizi tanımlayın.",
+    "name": "İşletme adı", "industry": "Sektör",
+    "location": "Şehir, Ülke", "phone": "WhatsApp / Telefon",
+    "cta": "Şimdi Başlat", "or": "veya kendiniz açıklayın",
+    "region_hint": "Siteniz şurada barındırılacak"
+  },
+  "booking": {
+    "title": "Randevu al",
+    "select_service": "Hizmet seçin", "select_date": "Tarih seçin",
+    "select_time": "Saat seçin", "your_name": "Adınız",
+    "your_phone": "Telefon / WhatsApp", "submit": "Randevuyu onayla",
+    "success": "Randevu onaylandı! Kısa süre içinde WhatsApp onayı alacaksınız.",
+    "consent": "Randevu alarak, randevunuzla ilgili sizinle iletişime geçmemize onay vermiş olursunuz."
+  },
+  "checkout": {
+    "title": "Ödemeyi tamamla", "pay_now": "Şimdi öde",
+    "order_summary": "Sipariş özeti", "total": "Toplam",
+    "success": "Ödeme alındı! WhatsApp onayı alacaksınız.",
+    "already_paid": "Bu sipariş zaten ödenmiş."
+  },
+  "invoice": {
+    "invoice_number": "Fatura #", "due_date": "Son ödeme",
+    "status_paid": "ÖDENDİ", "status_due": "Ödeme bekliyor",
+    "subtotal": "Ara toplam", "tax": "KDV", "total": "Toplam",
+    "pay_now": "Faturayı öde", "print": "Yazdır"
+  },
+  "chat": {
+    "greeting": "Merhaba! {{business}}'e hoş geldiniz. Bugün size nasıl yardımcı olabiliriz?",
+    "reply_time": "Genellikle dakikalar içinde yanıt verir",
+    "book": "Randevu al", "services": "Hizmetlerimiz hakkında bilgi al",
+    "quote": "Fiyat teklifi al", "type_message": "Mesajınızı yazın...",
+    "powered_by": "Perathos tarafından desteklenmektedir"
+  },
+  "reviews": { "section_title": "Müşterilerimiz ne diyor" },
+  "plans": {
+    "free": "Ücretsiz", "growth": "Büyüme", "pro": "Pro",
+    "per_month": "aylık",
+    "free_desc": "İlk siteniz sonsuza kadar ücretsiz",
+    "growth_desc": "Özel alan adı, WhatsApp ticareti, sosyal araçlar",
+    "pro_desc": "Yapay zeka ajan ekibi, gelişmiş analitik, öncelikli destek"
+  }
+}

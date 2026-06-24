@@ -16,6 +16,8 @@ export const dynamic = "force-dynamic";
 
 interface Body {
   description?: unknown;
+  locale?: unknown;
+  countryCode?: unknown;
 }
 
 export async function POST(request: Request) {
@@ -35,7 +37,18 @@ export async function POST(request: Request) {
     );
   }
 
+  // Geo/locale context passed from the client (populated by quick-onboard response).
+  // This is an anonymous, unmetered route — locale is appended directly to the
+  // description so the mock/heuristic path also benefits from the language signal.
+  const locale      = typeof body.locale      === "string" ? body.locale.trim()      : "en";
+  const countryCode = typeof body.countryCode === "string" ? body.countryCode.trim() : "US";
+
+  const langSuffix = locale !== "en"
+    ? ` Generate the business offer and services in ${locale} language, culturally appropriate for ${countryCode}.`
+    : "";
+  const localizedDescription = description + langSuffix;
+
   const { profile, lowConfidence } =
-    await selectAgentProvider().generateProfile(description);
+    await selectAgentProvider().generateProfile(localizedDescription);
   return NextResponse.json({ ok: true, profile, lowConfidence });
 }

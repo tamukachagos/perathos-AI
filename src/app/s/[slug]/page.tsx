@@ -74,9 +74,12 @@ export async function generateMetadata({
   const { slug } = await params;
   const site = await resolveSite(slug);
   if (!site) return { title: "Launch Desk" };
+  // site.locale is optional — fall back to "en" for backward compatibility
+  const locale = (site as PublishedSite & { locale?: string }).locale ?? "en";
   return {
     title: `${site.name} — ${site.location}`,
     description: site.offer,
+    other: { lang: locale },
   };
 }
 
@@ -101,12 +104,15 @@ export default async function PublishedSitePage({ params }: PageProps) {
   // fallback reads a just-published localStorage draft for anonymous use.
   if (site) {
     const showBranding = await resolveShowBranding(slug);
+    const siteLocale = (site as PublishedSite & { locale?: string }).locale ?? "en";
     return (
-      <PublishedSiteView
-        site={site}
-        showBranding={showBranding}
-        featuredReviews={featuredReviews}
-      />
+      <div lang={siteLocale} dir={siteLocale === "ar" ? "rtl" : "ltr"}>
+        <PublishedSiteView
+          site={site}
+          showBranding={showBranding}
+          featuredReviews={featuredReviews}
+        />
+      </div>
     );
   }
   return <ClientSiteFallback slug={slug} />;

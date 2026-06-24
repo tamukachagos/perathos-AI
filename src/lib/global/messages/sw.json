@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Studio", "preview": "Hakiki", "domain": "Kikoa",
+    "whatsapp": "WhatsApp", "analytics": "Takwimu", "bookings": "Miadi",
+    "crm": "CRM", "invoicing": "Ankara", "pages": "Kurasa",
+    "brand": "Chapa", "marketing": "Masoko", "reviews": "Maoni"
+  },
+  "onboarding": {
+    "title": "Zindua biashara yako mtandaoni kwa dakika 2",
+    "subtitle": "Hakuna ujuzi wa kiufundi unaohitajika. Eleza tu biashara yako.",
+    "name": "Jina la biashara", "industry": "Sekta",
+    "location": "Mji, Nchi", "phone": "WhatsApp / Nambari ya Simu",
+    "cta": "Zindua Sasa", "or": "au eleza mwenyewe",
+    "region_hint": "Tovuti yako itahifadhiwa katika"
+  },
+  "booking": {
+    "title": "Panga miadi",
+    "select_service": "Chagua huduma", "select_date": "Chagua tarehe",
+    "select_time": "Chagua wakati", "your_name": "Jina lako",
+    "your_phone": "Simu / WhatsApp", "submit": "Thibitisha miadi",
+    "success": "Miadi imethibitishwa! Utapata uthibitisho kwa WhatsApp hivi karibuni.",
+    "consent": "Kwa kupanga miadi, unakubali tuwasiliane nawe kuhusu miadi yako."
+  },
+  "checkout": {
+    "title": "Kamilisha malipo", "pay_now": "Lipa sasa",
+    "order_summary": "Muhtasari wa agizo", "total": "Jumla",
+    "success": "Malipo yamepokelewa! Utapata uthibitisho kwa WhatsApp.",
+    "already_paid": "Agizo hili limeshalipwa."
+  },
+  "invoice": {
+    "invoice_number": "Ankara #", "due_date": "Tarehe ya mwisho",
+    "status_paid": "IMELIPWA", "status_due": "Malipo yanangojewa",
+    "subtotal": "Jumla ndogo", "tax": "Kodi", "total": "Jumla",
+    "pay_now": "Lipa ankara", "print": "Chapisha"
+  },
+  "chat": {
+    "greeting": "Habari! Karibu {{business}}. Tunaweza kukusaidiaje leo?",
+    "reply_time": "Kwa kawaida hujibu ndani ya dakika chache",
+    "book": "Panga miadi", "services": "Uliza kuhusu huduma zetu",
+    "quote": "Pata bei", "type_message": "Andika ujumbe wako...",
+    "powered_by": "Inayoendeshwa na Perathos"
+  },
+  "reviews": { "section_title": "Wateja wetu wanasema nini" },
+  "plans": {
+    "free": "Bure", "growth": "Ukuaji", "pro": "Pro",
+    "per_month": "kwa mwezi",
+    "free_desc": "Tovuti yako ya kwanza, bure milele",
+    "growth_desc": "Kikoa maalum, biashara ya WhatsApp, zana za kijamii",
+    "pro_desc": "Timu ya mawakala wa AI, takwimu za hali ya juu, msaada wa kipaumbele"
+  }
+}

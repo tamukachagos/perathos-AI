@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "工作室", "preview": "预览", "domain": "域名",
+    "whatsapp": "WhatsApp", "analytics": "数据分析", "bookings": "预约",
+    "crm": "客户管理", "invoicing": "发票", "pages": "页面",
+    "brand": "品牌", "marketing": "营销", "reviews": "评价"
+  },
+  "onboarding": {
+    "title": "2分钟内将您的业务上线",
+    "subtitle": "无需技术知识，只需描述您的业务。",
+    "name": "业务名称", "industry": "行业",
+    "location": "城市，国家", "phone": "WhatsApp / 电话号码",
+    "cta": "立即上线", "or": "或自行描述",
+    "region_hint": "您的网站将托管于"
+  },
+  "booking": {
+    "title": "预约",
+    "select_service": "选择服务", "select_date": "选择日期",
+    "select_time": "选择时间", "your_name": "您的姓名",
+    "your_phone": "电话 / WhatsApp", "submit": "确认预约",
+    "success": "预约已确认！您将很快收到WhatsApp确认消息。",
+    "consent": "预约即表示您同意我们就您的预约与您联系。"
+  },
+  "checkout": {
+    "title": "完成支付", "pay_now": "立即支付",
+    "order_summary": "订单摘要", "total": "总计",
+    "success": "已收到付款！您将收到WhatsApp确认消息。",
+    "already_paid": "该订单已支付。"
+  },
+  "invoice": {
+    "invoice_number": "发票 #", "due_date": "截止日期",
+    "status_paid": "已付款", "status_due": "待付款",
+    "subtotal": "小计", "tax": "税费", "total": "总计",
+    "pay_now": "支付发票", "print": "打印"
+  },
+  "chat": {
+    "greeting": "您好！欢迎来到{{business}}。今天有什么可以帮助您的？",
+    "reply_time": "通常在几分钟内回复",
+    "book": "预约", "services": "了解我们的服务",
+    "quote": "获取报价", "type_message": "输入您的消息...",
+    "powered_by": "由 Perathos 提供支持"
+  },
+  "reviews": { "section_title": "客户评价" },
+  "plans": {
+    "free": "免费", "growth": "成长版", "pro": "专业版",
+    "per_month": "每月",
+    "free_desc": "您的第一个网站，永久免费",
+    "growth_desc": "自定义域名、WhatsApp商务、社交工具",
+    "pro_desc": "AI智能体团队、高级分析、优先支持"
+  }
+}

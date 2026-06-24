@@ -7,16 +7,18 @@
 //
 // Flow:
 //   1. Page mounts → fetches /api/pay/[ref] for order data.
-//   2. Customer sees order items + total in ZAR.
-//   3. Paystack inline.js is loaded dynamically; clicking the button opens the
-//      Paystack popup charged in ZAR cents (1 ZAR cent = 1 kobo; Paystack uses
-//      the smallest unit of the currency, which for ZAR is cents, same as Rand
-//      cents — i.e. amount in kobo equals amount in cents for ZAR).
+//   2. Customer sees order items + total.
+//   3a. ZAR / af-south: Paystack inline.js popup (existing path).
+//   3b. Other currencies: Stripe Checkout redirect via /api/pay/[ref]/stripe-session.
 //   4. On Paystack callback: POST /api/pay/[ref] to mark order paid.
 //   5. Success screen shown.
+//
+// Currency note: WhatsappOrder has no `currency` DB column yet (ZAR-only schema).
+// The `currency` field on OrderData defaults to "ZAR" until a migration adds it.
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
+import { formatCents } from "@/lib/global/currency";
 
 // --- Types -------------------------------------------------------------------
 
@@ -32,10 +34,16 @@ interface OrderData {
   tenantId: string;
   businessName: string;
   items: OrderItem[];
-  /** String representation of a BigInt (ZAR cents). */
+  /** String representation of a BigInt (smallest currency unit). */
   totalCents: string;
   status: string;
   customerContact: string;
+  /**
+   * ISO 4217 currency code. Defaults to "ZAR" — the WhatsappOrder schema
+   * does not yet carry a currency column. When a migration adds it, the API
+   * will populate this field from the DB row.
+   */
+  currency?: string;
   /** Set when the GET returns 200 with error: "already_paid". */
   alreadyPaid?: boolean;
 }
@@ -61,17 +69,14 @@ declare global {
 
 // --- Helpers ----------------------------------------------------------------
 
-/** Format ZAR cents as "R X,XXX.XX". */
-function formatZar(cents: string | number): string {
-  const num = typeof cents === "string" ? Number(cents) : cents;
-  const rands = num / 100;
-  return (
-    "R " +
-    rands.toLocaleString("en-ZA", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
+/**
+ * Format an amount in the given currency's smallest unit.
+ * Delegates to formatCents from @/lib/global/currency for multi-currency
+ * support. Falls back to ZAR if currency is unset (no DB column yet).
+ */
+function formatAmount(cents: string | number | bigint, currency = "ZAR"): string {
+  const c = typeof cents === "bigint" ? cents : BigInt(Math.round(Number(cents)));
+  return formatCents(c, currency);
 }
 
 /** Dynamically load the Paystack inline.js script (idempotent). */
@@ -108,6 +113,8 @@ export default function CheckoutPage() {
   const [error, setError] = useState<string | null>(null);
   const [paid, setPaid] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [stripeLoading, setStripeLoading] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
 
   // Fetch order data on mount.
   useEffect(() => {
@@ -228,6 +235,36 @@ export default function CheckoutPage() {
     handler.openIframe();
   }, [order, paying, ref]);
 
+  /**
+   * Stripe Checkout redirect — used for non-ZAR / non-af-south orders.
+   * Calls /api/pay/[ref]/stripe-session to create a Stripe Checkout Session,
+   * then redirects the browser to the hosted Stripe checkout URL.
+   */
+  const handleStripeCheckout = useCallback(async () => {
+    if (!order || stripeLoading) return;
+    setStripeLoading(true);
+    setStripeError(null);
+    try {
+      const res = await fetch(
+        `/api/pay/${encodeURIComponent(ref)}/stripe-session`,
+        { method: "POST" },
+      );
+      const data = (await res.json()) as {
+        checkoutUrl?: string;
+        error?: string;
+      };
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      } else {
+        setStripeError(data.error ?? "Failed to start Stripe checkout.");
+        setStripeLoading(false);
+      }
+    } catch {
+      setStripeError("Could not reach Stripe. Please try again.");
+      setStripeLoading(false);
+    }
+  }, [order, stripeLoading, ref]);
+
   // --- Render -----------------------------------------------------------------
 
   if (loading) {
@@ -282,6 +319,10 @@ export default function CheckoutPage() {
   if (!order) return null;
 
   const totalCents = BigInt(order.totalCents);
+  // Default to ZAR — no currency column in WhatsappOrder schema yet.
+  const currency = order.currency ?? "ZAR";
+  // Use Paystack inline for ZAR orders (af-south path); Stripe for everything else.
+  const usePaystack = currency === "ZAR";
 
   return (
     <div className="checkout-page">
@@ -300,24 +341,53 @@ export default function CheckoutPage() {
                   </span>
                 )}
               </span>
-              <span>{formatZar(item.priceCents * item.quantity)}</span>
+              <span>{formatAmount(item.priceCents * item.quantity, currency)}</span>
             </div>
           ))}
         </div>
 
         <div className="checkout-total">
           <span>Total</span>
-          <span>{formatZar(totalCents.toString())}</span>
+          <span>{formatAmount(totalCents, currency)}</span>
         </div>
 
-        <button
-          className="checkout-pay-btn"
-          onClick={handlePay}
-          disabled={paying}
-          aria-busy={paying}
-        >
-          {paying ? "Opening payment..." : `Pay ${formatZar(totalCents.toString())}`}
-        </button>
+        {usePaystack ? (
+          <button
+            className="checkout-pay-btn"
+            onClick={handlePay}
+            disabled={paying}
+            aria-busy={paying}
+          >
+            {paying
+              ? "Opening payment..."
+              : `Pay ${formatAmount(totalCents, currency)}`}
+          </button>
+        ) : (
+          <>
+            <button
+              className="checkout-pay-btn"
+              onClick={handleStripeCheckout}
+              disabled={stripeLoading}
+              aria-busy={stripeLoading}
+            >
+              {stripeLoading
+                ? "Redirecting to Stripe..."
+                : `Pay ${formatAmount(totalCents, currency)}`}
+            </button>
+            {stripeError && (
+              <p
+                style={{
+                  marginTop: 8,
+                  fontSize: 13,
+                  color: "var(--error, #e53e3e)",
+                  textAlign: "center",
+                }}
+              >
+                {stripeError}
+              </p>
+            )}
+          </>
+        )}
 
         <p
           style={{
@@ -327,7 +397,9 @@ export default function CheckoutPage() {
             textAlign: "center",
           }}
         >
-          Secured by Paystack &bull; ZAR
+          {usePaystack
+            ? `Secured by Paystack • ${currency}`
+            : `Secured by Stripe • ${currency}`}
         </p>
       </div>
     </div>
