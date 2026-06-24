@@ -1,4 +1,4 @@
-"use server";
+﻿import "server-only";
 
 // CRM adapter — contact management backed by the CrmContact Prisma model.
 // Supports upsert-by-phone/email, pipeline stage tracking, and free-form notes.

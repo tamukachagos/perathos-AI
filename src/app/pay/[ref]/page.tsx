@@ -75,8 +75,7 @@ declare global {
  * support. Falls back to ZAR if currency is unset (no DB column yet).
  */
 function formatAmount(cents: string | number | bigint, currency = "ZAR"): string {
-  const c = typeof cents === "bigint" ? cents : BigInt(Math.round(Number(cents)));
-  return formatCents(c, currency);
+  return formatCents(Number(cents), currency);
 }
 
 /** Dynamically load the Paystack inline.js script (idempotent). */

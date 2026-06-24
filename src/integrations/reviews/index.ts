@@ -1,4 +1,4 @@
-"use server";
+﻿import "server-only";
 
 // Reviews adapter — Google Reviews import and manual testimonial management.
 // Manual reviews always work (no key needed). Google import requires

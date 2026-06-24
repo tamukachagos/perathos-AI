@@ -229,6 +229,9 @@ export async function runForPlatformMarketing(): Promise<AgentResult> {
     whatsapp: "",
     domain: "perathos.com",
     planTier: "pro",
+    locale: "en",
+    currency: "ZAR",
+    countryCode: "ZA",
   };
 
   const topics = [

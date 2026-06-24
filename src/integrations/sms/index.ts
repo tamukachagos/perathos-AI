@@ -1,4 +1,4 @@
-"use server";
+﻿import "server-only";
 
 // SMS adapter — outbound SMS via Africa's Talking.
 // Gated on AFRICAS_TALKING_API_KEY + AFRICAS_TALKING_USERNAME.

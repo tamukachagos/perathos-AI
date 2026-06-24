@@ -8,9 +8,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   _request: Request,
-  { params }: { params: { slug: string } },
+  { params }: { params: Promise<{ slug: string }> },
 ) {
-  const { slug } = params;
+  const { slug } = await params;
 
   // Resolve site
   const site = await prisma.generatedSite.findFirst({

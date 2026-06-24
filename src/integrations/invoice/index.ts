@@ -1,4 +1,4 @@
-"use server";
+﻿import "server-only";
 
 // Invoice adapter — customer-facing invoices backed by the CustomerInvoice
 // Prisma model. Invoice numbers follow an INV-001 sequence per tenant.

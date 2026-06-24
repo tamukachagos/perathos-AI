@@ -1,4 +1,4 @@
-"use server";
+﻿import "server-only";
 
 // Social media adapter — multi-platform posting via Ayrshare.
 // Gated on AYRSHARE_API_KEY; falls back to mock (console logging) when absent.

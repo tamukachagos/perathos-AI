@@ -1,4 +1,4 @@
-"use server";
+﻿import "server-only";
 
 // Pages adapter — multi-page site management backed by the SitePage Prisma model.
 // No external API key required; the adapter is always "configured".
