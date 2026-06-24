@@ -1,3 +1,4 @@
+import "server-only";
 import { createMockAdapter } from "@/integrations/core/mockAdapter";
 import { evaluatePayments } from "@/integrations/core/readiness";
 import { isStripeConfigured } from "./stripeProvider";
