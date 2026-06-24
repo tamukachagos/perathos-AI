@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 // Email marketing adapter — campaign creation and sending via Resend.
 // Gated on RESEND_API_KEY; falls back to mock (console logging) when absent.

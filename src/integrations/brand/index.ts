@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 // Brand adapter — logo generation via OpenRouter (FLUX Schnell) + brand kit
 // persistence in the BrandKit Prisma model.

@@ -29,6 +29,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // server-only is a Next.js virtual module that throws when imported on the
+      // client; in Vitest (Vite) it doesn't exist as a real package, so we stub
+      // it with an empty no-op so server-side library files can be imported in tests.
+      "server-only": fileURLToPath(new URL("./src/__mocks__/server-only.ts", import.meta.url)),
     },
   },
 });

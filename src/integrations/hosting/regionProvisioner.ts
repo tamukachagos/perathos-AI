@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 import { COUNTRY_REGION } from "@/lib/global/config";
 
 export const REGION_CLUSTER: Record<string, { cluster: string; endpoint: string; provider: string }> = {

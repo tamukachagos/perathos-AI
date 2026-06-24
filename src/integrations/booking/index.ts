@@ -1,4 +1,4 @@
-﻿import "server-only";
+import "server-only";
 
 // Booking adapter — appointment scheduling backed by the local Booking Prisma
 // model. No external API key needed for V1; the adapter is always "configured".
