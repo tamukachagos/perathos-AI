@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { getProvider as getEmailProvider } from "@/integrations/emailMarketing";
 import * as ContentAgent from "@/marketing/agents/ContentAgent";
 import type { AgentResult, MarketingContext } from "@/marketing/types";
+import { getEmailComplianceFooter } from "@/marketing/localeInstruction";
 
 const MS_DAY = 24 * 60 * 60 * 1000;
 
@@ -15,6 +16,26 @@ const MS_DAY = 24 * 60 * 60 * 1000;
 function canEmail(lastContactAt: Date | null): boolean {
   if (!lastContactAt) return true;
   return Date.now() - lastContactAt.getTime() > 7 * MS_DAY;
+}
+
+/**
+ * Append the correct legal compliance footer to an HTML email body.
+ * Uses a generic unsubscribe placeholder when no real URL is available.
+ */
+function appendComplianceFooter(
+  htmlBody: string,
+  countryCode: string,
+  businessName: string,
+  unsubUrl = "{{unsubscribe_link}}",
+): string {
+  // Remove any existing generic unsubscribe paragraph before appending the
+  // locale-specific footer to avoid duplication.
+  const cleaned = htmlBody.replace(
+    /<p[^>]*>\s*\{\{unsubscribe_link\}\}\s*<\/p>/gi,
+    "",
+  );
+  const footer = getEmailComplianceFooter(countryCode, businessName, unsubUrl);
+  return cleaned + footer;
 }
 
 /**
@@ -85,10 +106,12 @@ export async function run(ctx: MarketingContext): Promise<AgentResult> {
 
       if (!subject || !bodyHtml) continue;
 
+      const countryCode = ctx.countryCode ?? "ZA";
+      const finalBody = appendComplianceFooter(bodyHtml, countryCode, ctx.businessName);
       const campaign = await email.createCampaign(ctx.tenantId, {
         name: `welcome-seq-day${daysOld}-${contact.id}`,
         subject,
-        bodyHtml,
+        bodyHtml: finalBody,
       });
 
       await email.sendCampaign(campaign.id, [contact.email]);
@@ -142,10 +165,11 @@ ${ctx.whatsapp ? `<p>Questions? <a href="https://wa.me/${ctx.whatsapp.replace(/\
 <p>The ${ctx.businessName} Team</p>
 <p style="font-size:12px;color:#999;">{{unsubscribe_link}}</p>`;
 
+        const countryCodeReminder = ctx.countryCode ?? "ZA";
         const campaign = await email.createCampaign(ctx.tenantId, {
           name: `booking-reminder-24h-${booking.id}`,
           subject,
-          bodyHtml,
+          bodyHtml: appendComplianceFooter(bodyHtml, countryCodeReminder, ctx.businessName),
         });
         await email.sendCampaign(campaign.id, [contact.email]);
         await prisma.booking.update({
@@ -180,10 +204,11 @@ ${ctx.whatsapp ? `<p>Questions? <a href="https://wa.me/${ctx.whatsapp.replace(/\
 <p>Warm regards,<br>The ${ctx.businessName} Team</p>
 <p style="font-size:12px;color:#999;">{{unsubscribe_link}}</p>`;
 
+        const countryCodePostVisit = ctx.countryCode ?? "ZA";
         const campaign = await email.createCampaign(ctx.tenantId, {
           name: `post-visit-${booking.id}`,
           subject,
-          bodyHtml,
+          bodyHtml: appendComplianceFooter(bodyHtml, countryCodePostVisit, ctx.businessName),
         });
         await email.sendCampaign(campaign.id, [contact.email]);
         await prisma.crmContact.update({
@@ -218,10 +243,11 @@ ${ctx.whatsapp ? `<p>Questions? <a href="https://wa.me/${ctx.whatsapp.replace(/\
           .filter((e): e is string => !!e);
 
         if (recipients.length > 0) {
+          const countryCodeNewsletter = ctx.countryCode ?? "ZA";
           const campaign = await email.createCampaign(ctx.tenantId, {
             name: `newsletter-${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`,
             subject: emailPiece.subject,
-            bodyHtml: emailPiece.content,
+            bodyHtml: appendComplianceFooter(emailPiece.content, countryCodeNewsletter, ctx.businessName),
           });
           await email.sendCampaign(campaign.id, recipients);
           actions.push(`Sent monthly newsletter to ${recipients.length} contacts`);
@@ -391,10 +417,11 @@ export async function sendNewsletter(ctx: MarketingContext): Promise<AgentResult
       };
     }
 
+    const countryCodeManual = ctx.countryCode ?? "ZA";
     const campaign = await email.createCampaign(ctx.tenantId, {
       name: `newsletter-manual-${Date.now()}`,
       subject: emailPiece.subject,
-      bodyHtml: emailPiece.content,
+      bodyHtml: appendComplianceFooter(emailPiece.content, countryCodeManual, ctx.businessName),
     });
     await email.sendCampaign(campaign.id, recipients);
     actions.push(`Sent newsletter "${emailPiece.subject}" to ${recipients.length} contacts`);

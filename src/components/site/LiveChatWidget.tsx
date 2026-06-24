@@ -8,11 +8,17 @@ interface LiveChatWidgetProps {
   services?: string;
 }
 
-const QUICK_REPLIES = [
-  "Book an appointment",
-  "Ask about our services",
-  "Get a quote",
-];
+// ── Inline translation map ────────────────────────────────────────────────────
+const CHAT_T: Record<string, { greeting: string; replyTime: string; book: string; services: string; quote: string; placeholder: string; powered: string }> = {
+  en: { greeting: "Hi! Welcome to {{business}}. How can we help?", replyTime: "Usually replies within minutes", book: "Book appointment", services: "Our services", quote: "Get a quote", placeholder: "Type your message...", powered: "Powered by Perathos" },
+  es: { greeting: "¡Hola! Bienvenido a {{business}}. ¿En qué podemos ayudarte?", replyTime: "Normalmente responde en minutos", book: "Reservar cita", services: "Nuestros servicios", quote: "Solicitar presupuesto", placeholder: "Escribe tu mensaje...", powered: "Impulsado por Perathos" },
+  pt: { greeting: "Olá! Bem-vindo à {{business}}. Como podemos ajudar?", replyTime: "Normalmente responde em minutos", book: "Agendar consulta", services: "Nossos serviços", quote: "Solicitar orçamento", placeholder: "Digite sua mensagem...", powered: "Com tecnologia Perathos" },
+  fr: { greeting: "Bonjour ! Bienvenue chez {{business}}. Comment pouvons-nous vous aider ?", replyTime: "Répond généralement en quelques minutes", book: "Prendre RDV", services: "Nos services", quote: "Demander un devis", placeholder: "Tapez votre message...", powered: "Propulsé par Perathos" },
+  de: { greeting: "Hallo! Willkommen bei {{business}}. Wie können wir helfen?", replyTime: "Antwortet normalerweise in Minuten", book: "Termin buchen", services: "Unsere Leistungen", quote: "Angebot anfordern", placeholder: "Nachricht eingeben...", powered: "Unterstützt von Perathos" },
+  ar: { greeting: "مرحبًا! أهلًا بك في {{business}}. كيف يمكننا مساعدتك؟", replyTime: "يرد عادةً خلال دقائق", book: "حجز موعد", services: "خدماتنا", quote: "طلب عرض أسعار", placeholder: "اكتب رسالتك...", powered: "مدعوم من Perathos" },
+  zh: { greeting: "您好！欢迎来到{{business}}。我们能为您做什么？", replyTime: "通常在几分钟内回复", book: "预约服务", services: "我们的服务", quote: "获取报价", placeholder: "输入消息...", powered: "由Perathos驱动" },
+  ja: { greeting: "こんにちは！{{business}}へようこそ。どのようにお手伝いできますか？", replyTime: "通常数分以内に返信", book: "予約する", services: "サービス一覧", quote: "見積もりを取得", placeholder: "メッセージを入力...", powered: "Perathos提供" },
+};
 
 function buildWaUrl(phoneNumber: string, message: string): string {
   // Strip everything except digits
@@ -28,7 +34,16 @@ export function LiveChatWidget({
   const [open, setOpen] = useState(false);
   const [showBadge, setShowBadge] = useState(false);
   const [message, setMessage] = useState("");
+  const [locale, setLocale] = useState("en");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Detect browser locale on mount
+  useEffect(() => {
+    const lang = navigator.language ?? "en";
+    const base = lang.includes("-") ? lang.split("-")[0] : lang;
+    const supported = Object.keys(CHAT_T);
+    setLocale(supported.includes(base) ? base : "en");
+  }, []);
 
   // Show the unread badge after 5 s on first load
   useEffect(() => {
@@ -100,19 +115,25 @@ export function LiveChatWidget({
     </svg>
   );
 
-  const starterMessage = `Hi! Welcome to ${businessName}. How can we help you today?`;
+  const c = CHAT_T[locale] ?? CHAT_T.en;
+  const isRtl = locale === "ar";
+
+  const starterMessage = c.greeting.replace("{{business}}", businessName);
+
+  // Quick replies from translation
+  const quickReplies = [c.book, c.services, c.quote];
 
   return (
     <>
       {/* Expanded chat panel */}
       {open && (
-        <div className="chat-panel" role="dialog" aria-label={`Chat with ${businessName}`}>
+        <div className="chat-panel" role="dialog" aria-label={`Chat with ${businessName}`} dir={isRtl ? "rtl" : undefined}>
           {/* Header */}
           <div className="chat-panel-header">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <div className="chat-panel-title">{businessName}</div>
-                <div className="chat-panel-subtitle">Usually replies within minutes</div>
+                <div className="chat-panel-subtitle">{c.replyTime}</div>
               </div>
               <button
                 onClick={handleClose}
@@ -143,7 +164,7 @@ export function LiveChatWidget({
 
             {/* Quick replies */}
             <div className="chat-quick-replies">
-              {QUICK_REPLIES.map((reply) => (
+              {quickReplies.map((reply) => (
                 <button
                   key={reply}
                   className="chat-quick-reply"
@@ -161,7 +182,7 @@ export function LiveChatWidget({
               ref={inputRef}
               className="chat-input"
               type="text"
-              placeholder="Type your message..."
+              placeholder={c.placeholder}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -179,14 +200,13 @@ export function LiveChatWidget({
 
           {/* Powered by */}
           <div className="chat-powered">
-            Powered by{" "}
             <a
               href="https://perathos.com"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: "#999", textDecoration: "underline" }}
             >
-              Perathos
+              {c.powered}
             </a>
           </div>
         </div>

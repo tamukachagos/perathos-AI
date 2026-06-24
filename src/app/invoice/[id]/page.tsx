@@ -6,6 +6,7 @@
 
 import type { Metadata } from "next";
 import Link from "next/link";
+import { formatCents } from "@/lib/global/currency";
 
 export const dynamic = "force-dynamic";
 
@@ -31,11 +32,23 @@ interface InvoiceData {
   paymentRef: string | null;
   notes: string | null;
   createdAt: string;
+  /** ISO 4217 currency code, defaults to ZAR for backward compatibility. */
+  currency?: string;
 }
 
-function zarFormat(cents: string | number): string {
-  const n = typeof cents === "string" ? parseInt(cents, 10) : cents;
-  return `R${(n / 100).toFixed(2)}`;
+// ── Inline invoice translation map ───────────────────────────────────────────
+const INVOICE_T: Record<string, Record<string, string>> = {
+  en: { invoice_number: "Invoice #", due_date: "Due", status_paid: "PAID", status_due: "Payment Due", subtotal: "Subtotal", tax: "Tax", total: "Total", pay_now: "Pay invoice", print: "Print" },
+  es: { invoice_number: "Factura #", due_date: "Vence", status_paid: "PAGADO", status_due: "Pendiente de pago", subtotal: "Subtotal", tax: "Impuesto", total: "Total", pay_now: "Pagar factura", print: "Imprimir" },
+  pt: { invoice_number: "Fatura #", due_date: "Vencimento", status_paid: "PAGO", status_due: "A pagar", subtotal: "Subtotal", tax: "Imposto", total: "Total", pay_now: "Pagar fatura", print: "Imprimir" },
+  fr: { invoice_number: "Facture #", due_date: "Échéance", status_paid: "PAYÉ", status_due: "En attente", subtotal: "Sous-total", tax: "Taxe", total: "Total", pay_now: "Payer la facture", print: "Imprimer" },
+  de: { invoice_number: "Rechnung #", due_date: "Fällig", status_paid: "BEZAHLT", status_due: "Offen", subtotal: "Zwischensumme", tax: "Steuer", total: "Gesamt", pay_now: "Rechnung bezahlen", print: "Drucken" },
+  ar: { invoice_number: "فاتورة #", due_date: "تاريخ الاستحقاق", status_paid: "مدفوع", status_due: "مستحق الدفع", subtotal: "المجموع الفرعي", tax: "ضريبة", total: "الإجمالي", pay_now: "دفع الفاتورة", print: "طباعة" },
+  zh: { invoice_number: "发票 #", due_date: "到期日", status_paid: "已付款", status_due: "待付款", subtotal: "小计", tax: "税", total: "合计", pay_now: "支付发票", print: "打印" },
+};
+
+function it(locale: string, key: string): string {
+  return (INVOICE_T[locale] ?? INVOICE_T["en"])[key] ?? INVOICE_T["en"][key] ?? key;
 }
 
 async function fetchInvoice(
@@ -83,6 +96,9 @@ export default async function PublicInvoicePage({
   const { id } = await params;
   const result = await fetchInvoice(id);
 
+  // Default locale — server component, no navigator; en is safe default
+  const locale = "en";
+
   if (!result) {
     return (
       <div className="invoice-page">
@@ -97,6 +113,7 @@ export default async function PublicInvoicePage({
   }
 
   const { invoice, businessName } = result;
+  const currency = invoice.currency ?? "ZAR";
   const isPaid = invoice.status === "paid";
   const isVoid = invoice.status === "void";
   const items = Array.isArray(invoice.items) ? (invoice.items as LineItem[]) : [];
@@ -126,7 +143,7 @@ export default async function PublicInvoicePage({
           ) : null}
         </div>
         <div className="invoice-meta">
-          <div className="invoice-number">{invoice.number}</div>
+          <div className="invoice-number">{it(locale, "invoice_number")}{invoice.number}</div>
           <div style={{ marginTop: 6 }}>
             Issued:{" "}
             {new Date(invoice.createdAt).toLocaleDateString("en-ZA", {
@@ -135,7 +152,7 @@ export default async function PublicInvoicePage({
               year: "numeric",
             })}
           </div>
-          {dueDateLabel ? <div>Due: {dueDateLabel}</div> : null}
+          {dueDateLabel ? <div>{it(locale, "due_date")}: {dueDateLabel}</div> : null}
           <div style={{ marginTop: 8 }}>
             To: <strong style={{ color: "var(--heading)" }}>{invoice.customerName}</strong>
           </div>
@@ -153,7 +170,7 @@ export default async function PublicInvoicePage({
       {/* Status banner */}
       {isPaid ? (
         <div style={{ marginBottom: 24 }}>
-          <span className="invoice-status-paid">PAID</span>
+          <span className="invoice-status-paid">{it(locale, "status_paid")}</span>
         </div>
       ) : isVoid ? (
         <div
@@ -172,7 +189,7 @@ export default async function PublicInvoicePage({
         </div>
       ) : dueDateLabel ? (
         <div style={{ marginBottom: 24 }}>
-          <span className="invoice-status-due">Due by {dueDateLabel}</span>
+          <span className="invoice-status-due">{it(locale, "status_due")} {dueDateLabel}</span>
         </div>
       ) : null}
 
@@ -191,9 +208,9 @@ export default async function PublicInvoicePage({
             <tr key={i}>
               <td>{item.description}</td>
               <td style={{ textAlign: "center" }}>{item.qty}</td>
-              <td style={{ textAlign: "right" }}>{zarFormat(Math.round(item.unitPrice * 100))}</td>
+              <td style={{ textAlign: "right" }}>{formatCents(Math.round(item.unitPrice * 100), currency)}</td>
               <td style={{ textAlign: "right" }}>
-                {zarFormat(Math.round(item.qty * item.unitPrice * 100))}
+                {formatCents(Math.round(item.qty * item.unitPrice * 100), currency)}
               </td>
             </tr>
           ))}
@@ -203,18 +220,18 @@ export default async function PublicInvoicePage({
       {/* Totals */}
       <div className="invoice-totals">
         <div className="invoice-total-row">
-          <span style={{ color: "var(--muted)" }}>Subtotal</span>
-          <span>{zarFormat(subtotal)}</span>
+          <span style={{ color: "var(--muted)" }}>{it(locale, "subtotal")}</span>
+          <span>{formatCents(subtotal, currency)}</span>
         </div>
         {hasVat ? (
           <div className="invoice-total-row">
-            <span style={{ color: "var(--muted)" }}>VAT (15%)</span>
-            <span>{zarFormat(tax)}</span>
+            <span style={{ color: "var(--muted)" }}>{it(locale, "tax")} (15%)</span>
+            <span>{formatCents(tax, currency)}</span>
           </div>
         ) : null}
         <div className="invoice-total-row invoice-total-grand">
-          <span>Total (ZAR)</span>
-          <span>{zarFormat(total)}</span>
+          <span>{it(locale, "total")} ({currency})</span>
+          <span>{formatCents(total, currency)}</span>
         </div>
       </div>
 
@@ -247,7 +264,7 @@ export default async function PublicInvoicePage({
               className="primary-button"
               style={{ textDecoration: "none" }}
             >
-              Pay Now — {zarFormat(total)}
+              {it(locale, "pay_now")} — {formatCents(total, currency)}
             </Link>
           ) : (
             <div
@@ -278,7 +295,7 @@ export default async function PublicInvoicePage({
             }}
             style={{ cursor: "pointer" }}
           >
-            Print / Save PDF
+            {it(locale, "print")} / Save PDF
           </button>
         </div>
       ) : null}

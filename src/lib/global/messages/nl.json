@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Studio", "preview": "Voorbeeld", "domain": "Domein",
+    "whatsapp": "WhatsApp", "analytics": "Statistieken", "bookings": "Afspraken",
+    "crm": "CRM", "invoicing": "Facturatie", "pages": "Pagina's",
+    "brand": "Merk", "marketing": "Marketing", "reviews": "Beoordelingen"
+  },
+  "onboarding": {
+    "title": "Lanceer uw bedrijf online in 2 minuten",
+    "subtitle": "Geen technische kennis nodig. Beschrijf gewoon uw bedrijf.",
+    "name": "Bedrijfsnaam", "industry": "Sector",
+    "location": "Stad, Land", "phone": "WhatsApp / Telefoon",
+    "cta": "Nu lanceren", "or": "of beschrijf het zelf",
+    "region_hint": "Uw site wordt gehost in"
+  },
+  "booking": {
+    "title": "Een afspraak maken",
+    "select_service": "Selecteer een dienst", "select_date": "Kies een datum",
+    "select_time": "Kies een tijdstip", "your_name": "Uw naam",
+    "your_phone": "Telefoon / WhatsApp", "submit": "Afspraak bevestigen",
+    "success": "Afspraak bevestigd! U ontvangt binnenkort een WhatsApp-bevestiging.",
+    "consent": "Door te boeken stemt u ermee in dat wij contact met u opnemen over uw afspraak."
+  },
+  "checkout": {
+    "title": "Betaling afronden", "pay_now": "Nu betalen",
+    "order_summary": "Besteloverzicht", "total": "Totaal",
+    "success": "Betaling ontvangen! U ontvangt een WhatsApp-bevestiging.",
+    "already_paid": "Deze bestelling is al betaald."
+  },
+  "invoice": {
+    "invoice_number": "Factuur #", "due_date": "Vervaldatum",
+    "status_paid": "BETAALD", "status_due": "Betaling verschuldigd",
+    "subtotal": "Subtotaal", "tax": "BTW", "total": "Totaal",
+    "pay_now": "Factuur betalen", "print": "Afdrukken"
+  },
+  "chat": {
+    "greeting": "Hallo! Welkom bij {{business}}. Hoe kunnen we u vandaag helpen?",
+    "reply_time": "Reageert doorgaans binnen enkele minuten",
+    "book": "Een afspraak maken", "services": "Informatie over onze diensten",
+    "quote": "Offerte aanvragen", "type_message": "Typ uw bericht...",
+    "powered_by": "Mogelijk gemaakt door Perathos"
+  },
+  "reviews": { "section_title": "Wat onze klanten zeggen" },
+  "plans": {
+    "free": "Gratis", "growth": "Groei", "pro": "Pro",
+    "per_month": "per maand",
+    "free_desc": "Uw eerste site, voor altijd gratis",
+    "growth_desc": "Eigen domein, WhatsApp-handel, sociale tools",
+    "pro_desc": "AI-agentensteam, geavanceerde analyses, prioriteitsondersteuning"
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Studio", "preview": "Aperçu", "domain": "Domaine",
+    "whatsapp": "WhatsApp", "analytics": "Statistiques", "bookings": "Rendez-vous",
+    "crm": "CRM", "invoicing": "Facturation", "pages": "Pages",
+    "brand": "Marque", "marketing": "Marketing", "reviews": "Avis"
+  },
+  "onboarding": {
+    "title": "Lancez votre activité en ligne en 2 minutes",
+    "subtitle": "Aucune compétence technique requise. Décrivez simplement votre activité.",
+    "name": "Nom de l'entreprise", "industry": "Secteur",
+    "location": "Ville, Pays", "phone": "WhatsApp / Téléphone",
+    "cta": "Lancer maintenant", "or": "ou décrivez-le vous-même",
+    "region_hint": "Votre site sera hébergé dans"
+  },
+  "booking": {
+    "title": "Prendre rendez-vous",
+    "select_service": "Choisir un service", "select_date": "Choisir une date",
+    "select_time": "Choisir un horaire", "your_name": "Votre nom",
+    "your_phone": "Téléphone / WhatsApp", "submit": "Confirmer le rendez-vous",
+    "success": "Rendez-vous confirmé ! Vous recevrez une confirmation WhatsApp sous peu.",
+    "consent": "En réservant, vous consentez à ce que nous vous contactions au sujet de votre rendez-vous."
+  },
+  "checkout": {
+    "title": "Finaliser le paiement", "pay_now": "Payer maintenant",
+    "order_summary": "Récapitulatif de la commande", "total": "Total",
+    "success": "Paiement reçu ! Vous recevrez une confirmation WhatsApp.",
+    "already_paid": "Cette commande a déjà été réglée."
+  },
+  "invoice": {
+    "invoice_number": "Facture n°", "due_date": "Échéance",
+    "status_paid": "PAYÉ", "status_due": "Paiement dû",
+    "subtotal": "Sous-total", "tax": "TVA", "total": "Total",
+    "pay_now": "Payer la facture", "print": "Imprimer"
+  },
+  "chat": {
+    "greeting": "Bonjour ! Bienvenue chez {{business}}. Comment pouvons-nous vous aider aujourd'hui ?",
+    "reply_time": "Répond généralement en quelques minutes",
+    "book": "Prendre rendez-vous", "services": "En savoir plus sur nos services",
+    "quote": "Demander un devis", "type_message": "Écrivez votre message...",
+    "powered_by": "Propulsé par Perathos"
+  },
+  "reviews": { "section_title": "Ce que disent nos clients" },
+  "plans": {
+    "free": "Gratuit", "growth": "Croissance", "pro": "Pro",
+    "per_month": "par mois",
+    "free_desc": "Votre premier site, gratuit pour toujours",
+    "growth_desc": "Domaine personnalisé, commerce WhatsApp, outils sociaux",
+    "pro_desc": "Équipe d'agents IA, analytics avancés, support prioritaire"
+  }
+}

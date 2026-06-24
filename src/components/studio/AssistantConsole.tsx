@@ -212,17 +212,6 @@ export function AssistantConsole({
     });
   }
 
-  function applyTemplate(business: Business, label: string) {
-    onApplyProfile(business);
-    dispatch({
-      type: "reply",
-      id: nextId(),
-      text: `I've loaded the ${label} template. Update your business name, phone number, and location in Profile — then open Preview to see your site.`,
-      card: { kind: "open-preview", label: "Open Preview" },
-      at: new Date().toISOString(),
-    });
-  }
-
   const showLiveCard = publishedSlug !== null;
 
   return (
@@ -294,6 +283,7 @@ function EmptyState({
   onOpenPreview: () => void;
 }) {
   const [showQuickLaunch, setShowQuickLaunch] = useState(true);
+
   return (
     <div className="studio-empty">
       <div className="studio-empty-mark">

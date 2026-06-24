@@ -17,6 +17,26 @@ const SLOTS = [
   "13:00", "14:00", "15:00", "16:00",
 ];
 
+// ── Inline translation map ────────────────────────────────────────────────────
+const T: Record<string, Record<string, string>> = {
+  en: { title: "Book an appointment", select_service: "Select a service", select_date: "Choose a date", select_time: "Choose a time", your_name: "Your name", your_phone: "Phone / WhatsApp", submit: "Confirm booking", success: "Booking confirmed! You'll receive a WhatsApp confirmation shortly.", consent: "By booking you consent to us contacting you about your appointment." },
+  es: { title: "Reservar una cita", select_service: "Seleccionar servicio", select_date: "Elegir fecha", select_time: "Elegir hora", your_name: "Tu nombre", your_phone: "Teléfono / WhatsApp", submit: "Confirmar reserva", success: "¡Reserva confirmada! Recibirás una confirmación por WhatsApp.", consent: "Al reservar aceptas que te contactemos sobre tu cita." },
+  pt: { title: "Agendar uma consulta", select_service: "Selecionar serviço", select_date: "Escolher data", select_time: "Escolher horário", your_name: "Seu nome", your_phone: "Telefone / WhatsApp", submit: "Confirmar agendamento", success: "Agendamento confirmado! Você receberá uma confirmação pelo WhatsApp.", consent: "Ao agendar você concorda que entremos em contato sobre sua consulta." },
+  fr: { title: "Prendre rendez-vous", select_service: "Sélectionner un service", select_date: "Choisir une date", select_time: "Choisir une heure", your_name: "Votre nom", your_phone: "Téléphone / WhatsApp", submit: "Confirmer le rendez-vous", success: "Rendez-vous confirmé ! Vous recevrez une confirmation par WhatsApp.", consent: "En réservant vous acceptez d'être contacté au sujet de votre rendez-vous." },
+  de: { title: "Termin buchen", select_service: "Service wählen", select_date: "Datum wählen", select_time: "Uhrzeit wählen", your_name: "Ihr Name", your_phone: "Telefon / WhatsApp", submit: "Termin bestätigen", success: "Termin bestätigt! Sie erhalten eine WhatsApp-Bestätigung.", consent: "Mit der Buchung stimmen Sie zu, bezüglich Ihres Termins kontaktiert zu werden." },
+  ar: { title: "احجز موعدًا", select_service: "اختر الخدمة", select_date: "اختر التاريخ", select_time: "اختر الوقت", your_name: "اسمك", your_phone: "الهاتف / واتساب", submit: "تأكيد الحجز", success: "تم تأكيد الحجز! ستتلقى تأكيدًا عبر واتساب.", consent: "بالحجز توافق على التواصل معك بشأن موعدك." },
+  zh: { title: "预约服务", select_service: "选择服务", select_date: "选择日期", select_time: "选择时间", your_name: "您的姓名", your_phone: "电话 / WhatsApp", submit: "确认预约", success: "预约已确认！您将收到WhatsApp确认消息。", consent: "预约即表示您同意我们就您的预约与您联系。" },
+  ja: { title: "予約する", select_service: "サービスを選択", select_date: "日付を選択", select_time: "時間を選択", your_name: "お名前", your_phone: "電話 / WhatsApp", submit: "予約を確認", success: "予約が確定しました！WhatsAppで確認メッセージをお送りします。", consent: "予約することで、予約に関する連絡を受けることに同意します。" },
+  ko: { title: "예약하기", select_service: "서비스 선택", select_date: "날짜 선택", select_time: "시간 선택", your_name: "성함", your_phone: "전화 / WhatsApp", submit: "예약 확인", success: "예약이 확정되었습니다! WhatsApp으로 확인 메시지를 받으실 거예요.", consent: "예약하면 예약 관련 연락을 받는 것에 동의하게 됩니다." },
+  hi: { title: "अपॉइंटमेंट बुक करें", select_service: "सेवा चुनें", select_date: "तारीख चुनें", select_time: "समय चुनें", your_name: "आपका नाम", your_phone: "फ़ोन / WhatsApp", submit: "बुकिंग की पुष्टि करें", success: "बुकिंग की पुष्टि हो गई! आपको WhatsApp पर पुष्टि मिलेगी।", consent: "बुकिंग करके आप अपनी अपॉइंटमेंट के बारे में संपर्क किए जाने के लिए सहमत हैं।" },
+};
+
+function t(locale: string, key: string): string {
+  return (T[locale] ?? T["en"])[key] ?? T["en"][key] ?? key;
+}
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
+
 // Build the next 14 calendar dates (today through today+13), excluding Sundays.
 function buildDateOptions(): string[] {
   const dates: string[] = [];
@@ -50,6 +70,9 @@ export default function BookingPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [siteError, setSiteError] = useState(false);
 
+  // Locale detection
+  const [locale, setLocale] = useState("en");
+
   // Form state
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -64,6 +87,15 @@ export default function BookingPage({ params }: PageProps) {
   const [error, setError] = useState("");
 
   const dates = buildDateOptions();
+
+  // Detect browser locale on mount
+  useEffect(() => {
+    const lang = navigator.language ?? "en";
+    // Keep "pt-BR" as "pt" (only map the base language code)
+    const base = lang.includes("-") ? lang.split("-")[0] : lang;
+    const supported = Object.keys(T);
+    setLocale(supported.includes(base) ? base : "en");
+  }, []);
 
   // Resolve params (Next 15 async params)
   useEffect(() => {
@@ -133,6 +165,8 @@ export default function BookingPage({ params }: PageProps) {
     }
   }
 
+  const isRtl = locale === "ar";
+
   if (loading) {
     return (
       <div className="booking-page" style={{ display: "grid", placeItems: "center" }}>
@@ -162,7 +196,7 @@ export default function BookingPage({ params }: PageProps) {
   if (success) {
     return (
       <div className="booking-page" style={{ display: "grid", placeItems: "center" }}>
-        <div className="booking-card" style={{ textAlign: "center" }}>
+        <div className="booking-card" style={{ textAlign: "center" }} dir={isRtl ? "rtl" : undefined}>
           <div
             style={{
               width: 56,
@@ -178,10 +212,7 @@ export default function BookingPage({ params }: PageProps) {
           >
             &#10003;
           </div>
-          <h2 style={{ color: "var(--heading)", marginTop: 0 }}>Booking confirmed!</h2>
-          <p style={{ color: "var(--muted)" }}>
-            You&apos;ll receive a WhatsApp confirmation shortly.
-          </p>
+          <h2 style={{ color: "var(--heading)", marginTop: 0 }}>{t(locale, "success")}</h2>
           <p style={{ color: "var(--muted)", fontSize: 13 }}>
             <strong>{service}</strong> on {friendlyDate(date)} at {time} with {site.name}.
           </p>
@@ -205,7 +236,7 @@ export default function BookingPage({ params }: PageProps) {
 
   return (
     <div className="booking-page">
-      <div className="booking-card">
+      <div className="booking-card" dir={isRtl ? "rtl" : undefined}>
         {/* Header */}
         <div style={{ marginBottom: 24 }}>
           <a
@@ -227,7 +258,7 @@ export default function BookingPage({ params }: PageProps) {
               fontWeight: 780,
             }}
           >
-            Book an Appointment
+            {t(locale, "title")}
           </h1>
           <p style={{ margin: 0, color: "var(--muted)", fontSize: 13 }}>
             {site.name} &middot; {site.location}
@@ -247,7 +278,7 @@ export default function BookingPage({ params }: PageProps) {
                   fontWeight: 720,
                 }}
               >
-                Service
+                {t(locale, "select_service")}
               </label>
               <select
                 className="booking-field"
@@ -276,7 +307,7 @@ export default function BookingPage({ params }: PageProps) {
                 fontWeight: 720,
               }}
             >
-              Date (next 14 days, Mon–Sat)
+              {t(locale, "select_date")}
             </label>
             <select
               className="booking-field"
@@ -309,7 +340,7 @@ export default function BookingPage({ params }: PageProps) {
                   fontWeight: 720,
                 }}
               >
-                Time slot
+                {t(locale, "select_time")}
               </label>
               <div className="booking-grid">
                 {SLOTS.map((slot) => {
@@ -341,7 +372,7 @@ export default function BookingPage({ params }: PageProps) {
           <input
             className="booking-field"
             type="text"
-            placeholder="Your name"
+            placeholder={t(locale, "your_name")}
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={200}
@@ -351,7 +382,7 @@ export default function BookingPage({ params }: PageProps) {
           <input
             className="booking-field"
             type="tel"
-            placeholder="WhatsApp number (e.g. 0821234567)"
+            placeholder={t(locale, "your_phone")}
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             maxLength={30}
@@ -359,7 +390,7 @@ export default function BookingPage({ params }: PageProps) {
             autoComplete="tel"
           />
 
-          {/* POPIA consent notice */}
+          {/* Consent notice */}
           <p
             style={{
               margin: "4px 0 16px",
@@ -368,8 +399,7 @@ export default function BookingPage({ params }: PageProps) {
               lineHeight: 1.5,
             }}
           >
-            By booking you consent to us contacting you about your appointment.
-            Your information is processed in accordance with POPIA.
+            {t(locale, "consent")}
           </p>
 
           {error && (
@@ -390,7 +420,7 @@ export default function BookingPage({ params }: PageProps) {
             className="booking-submit"
             disabled={submitting || !date || !time}
           >
-            {submitting ? "Booking…" : "Confirm booking"}
+            {submitting ? "Booking…" : t(locale, "submit")}
           </button>
         </form>
       </div>

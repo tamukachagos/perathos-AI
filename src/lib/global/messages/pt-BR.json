@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Estúdio", "preview": "Visualização", "domain": "Domínio",
+    "whatsapp": "WhatsApp", "analytics": "Análises", "bookings": "Agendamentos",
+    "crm": "CRM", "invoicing": "Faturamento", "pages": "Páginas",
+    "brand": "Marca", "marketing": "Marketing", "reviews": "Avaliações"
+  },
+  "onboarding": {
+    "title": "Lance seu negócio online em 2 minutos",
+    "subtitle": "Sem conhecimento técnico. Só descreva o seu negócio.",
+    "name": "Nome do negócio", "industry": "Setor",
+    "location": "Cidade, País", "phone": "WhatsApp / Telefone",
+    "cta": "Lançar agora", "or": "ou descreva você mesmo",
+    "region_hint": "Seu site será hospedado em"
+  },
+  "booking": {
+    "title": "Agendar um horário",
+    "select_service": "Selecionar um serviço", "select_date": "Escolher uma data",
+    "select_time": "Escolher um horário", "your_name": "Seu nome",
+    "your_phone": "Telefone / WhatsApp", "submit": "Confirmar agendamento",
+    "success": "Agendamento confirmado! Você receberá uma confirmação pelo WhatsApp em breve.",
+    "consent": "Ao agendar, você concorda que entremos em contato sobre o seu horário."
+  },
+  "checkout": {
+    "title": "Finalizar pagamento", "pay_now": "Pagar agora",
+    "order_summary": "Resumo do pedido", "total": "Total",
+    "success": "Pagamento recebido! Você receberá uma confirmação pelo WhatsApp.",
+    "already_paid": "Este pedido já foi pago."
+  },
+  "invoice": {
+    "invoice_number": "Nota Fiscal #", "due_date": "Vencimento",
+    "status_paid": "PAGO", "status_due": "Aguardando pagamento",
+    "subtotal": "Subtotal", "tax": "Impostos", "total": "Total",
+    "pay_now": "Pagar nota fiscal", "print": "Imprimir"
+  },
+  "chat": {
+    "greeting": "Olá! Bem-vindo a {{business}}. Como podemos te ajudar hoje?",
+    "reply_time": "Geralmente responde em minutos",
+    "book": "Agendar um horário", "services": "Saber sobre nossos serviços",
+    "quote": "Solicitar orçamento", "type_message": "Digite sua mensagem...",
+    "powered_by": "Desenvolvido por Perathos"
+  },
+  "reviews": { "section_title": "O que nossos clientes dizem" },
+  "plans": {
+    "free": "Grátis", "growth": "Crescimento", "pro": "Pro",
+    "per_month": "por mês",
+    "free_desc": "Seu primeiro site, grátis para sempre",
+    "growth_desc": "Domínio próprio, comércio pelo WhatsApp, ferramentas sociais",
+    "pro_desc": "Equipe de agentes IA, análises avançadas, suporte prioritário"
+  }
+}

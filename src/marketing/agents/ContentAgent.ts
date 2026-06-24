@@ -7,6 +7,7 @@
 import { routeLlm } from "@/integrations/llm";
 import { getRepositories } from "@/lib/db";
 import type { MarketingContext, ContentPiece } from "@/marketing/types";
+import { localeInstruction } from "@/marketing/localeInstruction";
 
 export interface ContentOptions {
   contentTypes: string[];
@@ -36,6 +37,8 @@ export async function run(
 
   const { contentTypes, topic, tone } = options;
   const { tenantId, businessName, industry, location, services } = ctx;
+  const locale = ctx.locale ?? "en";
+  const countryCode = ctx.countryCode ?? "ZA";
   const servicesStr = services.slice(0, 4).join(", ") || industry;
 
   for (const contentType of contentTypes) {
@@ -46,7 +49,7 @@ export async function run(
       const prompt = `You are a top South African social media manager. Create an engaging Facebook/Instagram post for ${businessName}, a ${industry} business in ${location}.
 Write as if you ARE the business owner. Include: attention-grabbing first line, value for the community, a call to action, 5 relevant SA hashtags.
 Topic: ${topic ?? `showcase our services and expertise in ${servicesStr}`}. Tone: ${tone ?? "warm, professional, community-focused"}.
-Under 250 words. No generic filler.`;
+Under 250 words. No generic filler.${localeInstruction(locale, countryCode)}`;
 
       const outcome = await routeLlm(
         { wallet: repos.wallet, audit: repos.audit, repos },
@@ -75,7 +78,7 @@ Under 250 words. No generic filler.`;
       const prompt = `Write a helpful 600-word blog post for ${businessName} (${industry} in ${location}).
 Topic: ${topic ?? `tips for customers related to ${industry}`}.
 Structure: catchy title, intro that hooks SA readers, 3-4 practical tips, conclusion with soft call to action.
-Write in a genuine, helpful voice. South African context and examples.`;
+Write in a genuine, helpful voice. South African context and examples.${localeInstruction(locale, countryCode)}`;
 
       const outcome = await routeLlm(
         { wallet: repos.wallet, audit: repos.audit, repos },
@@ -104,7 +107,7 @@ Write in a genuine, helpful voice. South African context and examples.`;
 Subject line (compelling, under 60 chars): generate one.
 Body: personal greeting, business update, one helpful tip about ${industry}, promotional offer for ${servicesStr}, warm sign-off.
 HTML format with simple styling. Include {{unsubscribe_link}} placeholder. Under 400 words.
-Start your response with SUBJECT: [subject line] on the first line, then the HTML body.`;
+Start your response with SUBJECT: [subject line] on the first line, then the HTML body.${localeInstruction(locale, countryCode)}`;
 
       const outcome = await routeLlm(
         { wallet: repos.wallet, audit: repos.audit, repos },
@@ -135,7 +138,7 @@ Start your response with SUBJECT: [subject line] on the first line, then the HTM
     // SMS CAMPAIGN
     // -----------------------------------------------------------------------
     if (contentType === "sms") {
-      const prompt = `Write a promotional SMS for ${businessName} (${industry} in ${location}). 160 characters max. Include a compelling offer, urgency, and "Reply STOP to opt out". SA market context.`;
+      const prompt = `Write a promotional SMS for ${businessName} (${industry} in ${location}). 160 characters max. Include a compelling offer, urgency, and "Reply STOP to opt out". SA market context.${localeInstruction(locale, countryCode)}`;
 
       const outcome = await routeLlm(
         { wallet: repos.wallet, audit: repos.audit, repos },
@@ -166,7 +169,7 @@ Each variation must have:
 - primaryText: under 125 characters
 - description: under 30 characters
 Target: SA small business owners and local community. Goal: get them to visit the website or WhatsApp.
-Return ONLY a JSON array, e.g.: [{"headline":"...","primaryText":"...","description":"..."},...]`;
+Return ONLY a JSON array, e.g.: [{"headline":"...","primaryText":"...","description":"..."},...]${localeInstruction(locale, countryCode)}`;
 
       const outcome = await routeLlm(
         { wallet: repos.wallet, audit: repos.audit, repos },

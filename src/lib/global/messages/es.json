@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Estudio", "preview": "Vista previa", "domain": "Dominio",
+    "whatsapp": "WhatsApp", "analytics": "Analíticas", "bookings": "Reservas",
+    "crm": "CRM", "invoicing": "Facturación", "pages": "Páginas",
+    "brand": "Marca", "marketing": "Marketing", "reviews": "Reseñas"
+  },
+  "onboarding": {
+    "title": "Lanza tu negocio en línea en 2 minutos",
+    "subtitle": "Sin conocimientos técnicos. Solo describe tu negocio.",
+    "name": "Nombre del negocio", "industry": "Sector",
+    "location": "Ciudad, País", "phone": "WhatsApp / Teléfono",
+    "cta": "Lanzar ahora", "or": "o descríbelo tú mismo",
+    "region_hint": "Tu sitio será alojado en"
+  },
+  "booking": {
+    "title": "Reservar una cita",
+    "select_service": "Selecciona un servicio", "select_date": "Elige una fecha",
+    "select_time": "Elige un horario", "your_name": "Tu nombre",
+    "your_phone": "Teléfono / WhatsApp", "submit": "Confirmar reserva",
+    "success": "¡Reserva confirmada! Recibirás una confirmación por WhatsApp en breve.",
+    "consent": "Al reservar, consientes que te contactemos sobre tu cita."
+  },
+  "checkout": {
+    "title": "Completa tu pago", "pay_now": "Pagar ahora",
+    "order_summary": "Resumen del pedido", "total": "Total",
+    "success": "¡Pago recibido! Recibirás una confirmación por WhatsApp.",
+    "already_paid": "Este pedido ya ha sido pagado."
+  },
+  "invoice": {
+    "invoice_number": "Factura #", "due_date": "Vence",
+    "status_paid": "PAGADO", "status_due": "Pago pendiente",
+    "subtotal": "Subtotal", "tax": "Impuesto", "total": "Total",
+    "pay_now": "Pagar factura", "print": "Imprimir"
+  },
+  "chat": {
+    "greeting": "¡Hola! Bienvenido a {{business}}. ¿En qué podemos ayudarte hoy?",
+    "reply_time": "Generalmente responde en minutos",
+    "book": "Reservar una cita", "services": "Consultar nuestros servicios",
+    "quote": "Solicitar presupuesto", "type_message": "Escribe tu mensaje...",
+    "powered_by": "Impulsado por Perathos"
+  },
+  "reviews": { "section_title": "Lo que dicen nuestros clientes" },
+  "plans": {
+    "free": "Gratis", "growth": "Crecimiento", "pro": "Pro",
+    "per_month": "por mes",
+    "free_desc": "Tu primer sitio, gratis para siempre",
+    "growth_desc": "Dominio propio, comercio por WhatsApp, redes sociales",
+    "pro_desc": "Equipo de agentes IA, analíticas avanzadas, soporte prioritario"
+  }
+}

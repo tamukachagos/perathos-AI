@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "스튜디오", "preview": "미리보기", "domain": "도메인",
+    "whatsapp": "WhatsApp", "analytics": "분석", "bookings": "예약",
+    "crm": "CRM", "invoicing": "청구서", "pages": "페이지",
+    "brand": "브랜드", "marketing": "마케팅", "reviews": "리뷰"
+  },
+  "onboarding": {
+    "title": "2분 만에 비즈니스를 온라인으로",
+    "subtitle": "기술 지식이 없어도 됩니다. 비즈니스를 설명하기만 하세요.",
+    "name": "비즈니스 이름", "industry": "업종",
+    "location": "도시, 국가", "phone": "WhatsApp / 전화번호",
+    "cta": "지금 시작하기", "or": "또는 직접 설명하기",
+    "region_hint": "사이트가 호스팅될 지역"
+  },
+  "booking": {
+    "title": "예약하기",
+    "select_service": "서비스 선택", "select_date": "날짜 선택",
+    "select_time": "시간 선택", "your_name": "이름",
+    "your_phone": "전화번호 / WhatsApp", "submit": "예약 확정",
+    "success": "예약이 확정되었습니다! 곧 WhatsApp으로 확인 메시지를 받으실 겁니다.",
+    "consent": "예약 시 예약 관련 연락에 동의하는 것으로 간주됩니다."
+  },
+  "checkout": {
+    "title": "결제 완료", "pay_now": "지금 결제",
+    "order_summary": "주문 요약", "total": "합계",
+    "success": "결제가 완료되었습니다! WhatsApp으로 확인 메시지가 발송됩니다.",
+    "already_paid": "이 주문은 이미 결제되었습니다."
+  },
+  "invoice": {
+    "invoice_number": "청구서 #", "due_date": "납기일",
+    "status_paid": "결제완료", "status_due": "결제 대기",
+    "subtotal": "소계", "tax": "세금", "total": "합계",
+    "pay_now": "청구서 결제", "print": "인쇄"
+  },
+  "chat": {
+    "greeting": "안녕하세요! {{business}}에 오신 것을 환영합니다. 오늘 무엇을 도와드릴까요?",
+    "reply_time": "보통 몇 분 안에 답장합니다",
+    "book": "예약하기", "services": "서비스 문의",
+    "quote": "견적 요청", "type_message": "메시지를 입력하세요...",
+    "powered_by": "Perathos 제공"
+  },
+  "reviews": { "section_title": "고객 후기" },
+  "plans": {
+    "free": "무료", "growth": "성장", "pro": "Pro",
+    "per_month": "월",
+    "free_desc": "첫 번째 사이트, 영원히 무료",
+    "growth_desc": "맞춤 도메인, WhatsApp 커머스, 소셜 도구",
+    "pro_desc": "AI 에이전트 팀, 고급 분석, 우선 지원"
+  }
+}

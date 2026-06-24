@@ -18,6 +18,7 @@
 // ever embedded; the egress allowlist is empty by default (default-deny).
 
 import type { HostingPlan, HostingRegion, HostingTier } from "./catalog";
+import { getCdnEndpoint, REGION_CLUSTER } from "./regionProvisioner";
 
 /** The rendered, vetted isolation manifest (mock representation). */
 export interface RenderedManifest {
@@ -27,6 +28,23 @@ export interface RenderedManifest {
   serviceAccount: string;
   tier: HostingTier;
   region: HostingRegion;
+  /**
+   * The granular region key (e.g. "eu-west", "ap-southeast") from REGION_CLUSTER,
+   * when provided by the provisioning request. Absent for legacy deployments using
+   * the three-value HOSTING_REGIONS enum only.
+   */
+  granularRegion?: string;
+  /**
+   * The K8s cluster name + endpoint for kubernetes-tier deployments, resolved
+   * from REGION_CLUSTER[granularRegion]. Absent for static/container tiers.
+   * NOTE: StaticTier (Vercel) has a global CDN — no region routing needed.
+   */
+  clusterRef?: { cluster: string; endpoint: string; provider: string };
+  /**
+   * CDN hostname for the deployment, e.g. "my-shop.eu.perathos.com".
+   * Absent for static-tier (Vercel handles its own global CDN distribution).
+   */
+  cdnEndpoint?: string;
   /** ResourceQuota — the hard cap on what this namespace can ever consume. */
   resourceQuota: {
     cpuMilli: number;
@@ -63,6 +81,11 @@ export interface RenderedManifest {
  * catalog plan. Pure + deterministic. `egressAllowlist` defaults to empty
  * (default-deny). The namespace + service account are derived from the tenant +
  * slug so they are unique and tenant-bound.
+ *
+ * `granularRegion` is the fine-grained region key (e.g. "eu-west", "ap-southeast")
+ * from REGION_CLUSTER. When provided the manifest includes `clusterRef` and
+ * `cdnEndpoint` for kubernetes-tier deployments. StaticTier (Vercel) uses its
+ * own global CDN — no region routing needed for static sites.
  */
 export function renderManifest(params: {
   tenantId: string;
@@ -71,6 +94,8 @@ export function renderManifest(params: {
   plan: HostingPlan;
   replicas?: number;
   egressAllowlist?: string[];
+  /** Optional fine-grained region key from REGION_CLUSTER (e.g. "eu-west"). */
+  granularRegion?: string;
 }): RenderedManifest {
   const { tenantId, slug, region, plan } = params;
   // A DNS-safe, tenant-bound namespace. Lower-case, hyphenated, truncated.
@@ -82,11 +107,27 @@ export function renderManifest(params: {
     Math.max(1, params.replicas ?? plan.replicas),
     plan.maxReplicas,
   );
+
+  // Resolve granular region cluster info when provided (kubernetes/container tiers).
+  // StaticTier (Vercel) has a global CDN — region routing is handled by Vercel itself.
+  const granularRegion = params.granularRegion;
+  const clusterRef =
+    granularRegion && plan.tier !== "static"
+      ? REGION_CLUSTER[granularRegion]
+      : undefined;
+  const cdnEndpoint =
+    granularRegion && plan.tier !== "static"
+      ? getCdnEndpoint(slug, granularRegion)
+      : undefined;
+
   return {
     namespace,
     serviceAccount: `${namespace}-sa`,
     tier: plan.tier,
     region,
+    ...(granularRegion !== undefined ? { granularRegion } : {}),
+    ...(clusterRef !== undefined ? { clusterRef } : {}),
+    ...(cdnEndpoint !== undefined ? { cdnEndpoint } : {}),
     resourceQuota: {
       cpuMilli: plan.cpuMilli * plan.maxReplicas,
       memMb: plan.memMb * plan.maxReplicas,

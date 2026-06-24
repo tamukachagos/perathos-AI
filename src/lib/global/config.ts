@@ -1,0 +1,138 @@
+// src/lib/global/config.ts
+export const SUPPORTED_LOCALES = [
+  { code: "en",    name: "English",              nativeName: "English",          dir: "ltr" },
+  { code: "es",    name: "Spanish",              nativeName: "Español",          dir: "ltr" },
+  { code: "pt",    name: "Portuguese",           nativeName: "Português",        dir: "ltr" },
+  { code: "pt-BR", name: "Portuguese (Brazil)",  nativeName: "Português (BR)",   dir: "ltr" },
+  { code: "fr",    name: "French",               nativeName: "Français",         dir: "ltr" },
+  { code: "de",    name: "German",               nativeName: "Deutsch",          dir: "ltr" },
+  { code: "it",    name: "Italian",              nativeName: "Italiano",         dir: "ltr" },
+  { code: "nl",    name: "Dutch",                nativeName: "Nederlands",       dir: "ltr" },
+  { code: "ar",    name: "Arabic",               nativeName: "العربية",          dir: "rtl" },
+  { code: "zh",    name: "Chinese (Simplified)", nativeName: "中文（简体）",     dir: "ltr" },
+  { code: "ja",    name: "Japanese",             nativeName: "日本語",           dir: "ltr" },
+  { code: "ko",    name: "Korean",               nativeName: "한국어",           dir: "ltr" },
+  { code: "hi",    name: "Hindi",                nativeName: "हिंदी",            dir: "ltr" },
+  { code: "ru",    name: "Russian",              nativeName: "Русский",          dir: "ltr" },
+  { code: "tr",    name: "Turkish",              nativeName: "Türkçe",           dir: "ltr" },
+  { code: "sw",    name: "Swahili",              nativeName: "Kiswahili",        dir: "ltr" },
+  { code: "af",    name: "Afrikaans",            nativeName: "Afrikaans",        dir: "ltr" },
+] as const;
+
+export type LocaleCode = typeof SUPPORTED_LOCALES[number]["code"];
+
+export const COUNTRY_LOCALE: Record<string, string> = {
+  US: "en", CA: "en", GB: "en", AU: "en", NZ: "en", IE: "en",
+  ES: "es", MX: "es", AR: "es", CO: "es", CL: "es", PE: "es", VE: "es",
+  BR: "pt-BR", PT: "pt",
+  FR: "fr", BE: "fr", CI: "fr", SN: "fr",
+  DE: "de", AT: "de",
+  IT: "it",
+  NL: "nl",
+  SA: "ar", AE: "ar", EG: "ar", MA: "ar", DZ: "ar",
+  CN: "zh", TW: "zh", HK: "zh",
+  JP: "ja",
+  KR: "ko",
+  IN: "hi",
+  RU: "ru",
+  TR: "tr",
+  KE: "sw", TZ: "sw", UG: "sw",
+  ZA: "af",
+  NG: "en",
+};
+
+export const COUNTRY_CURRENCY: Record<string, string> = {
+  US: "USD", CA: "CAD", AU: "AUD", NZ: "NZD",
+  GB: "GBP", IE: "EUR",
+  ES: "EUR", FR: "EUR", DE: "EUR", IT: "EUR", NL: "EUR", BE: "EUR",
+  AT: "EUR", PT: "EUR", FI: "EUR", GR: "EUR",
+  CH: "CHF", NO: "NOK", SE: "SEK", DK: "DKK",
+  BR: "BRL", MX: "MXN", AR: "ARS", CO: "COP", CL: "CLP",
+  IN: "INR", JP: "JPY", KR: "KRW", CN: "CNY",
+  SA: "SAR", AE: "AED", EG: "EGP",
+  ZA: "ZAR", NG: "NGN", KE: "KES", GH: "GHS",
+  RU: "RUB", TR: "TRY",
+};
+
+export const COUNTRY_REGION: Record<string, string> = {
+  US: "us-east", CA: "us-east", MX: "us-east",
+  BR: "us-east", AR: "us-east", CO: "us-east", CL: "us-east", PE: "us-east",
+  GB: "eu-west", FR: "eu-west", DE: "eu-central", NL: "eu-west",
+  BE: "eu-west", ES: "eu-west", IT: "eu-central", CH: "eu-central",
+  AT: "eu-central", PL: "eu-central", SE: "eu-west", NO: "eu-west",
+  DK: "eu-west", FI: "eu-west", IE: "eu-west", PT: "eu-west",
+  AE: "eu-west", SA: "eu-west", EG: "eu-west", IL: "eu-west",
+  JP: "ap-northeast", KR: "ap-northeast", CN: "ap-northeast",
+  AU: "ap-southeast", NZ: "ap-southeast", SG: "ap-southeast",
+  IN: "ap-southeast", TH: "ap-southeast", VN: "ap-southeast",
+  ID: "ap-southeast", PH: "ap-southeast", MY: "ap-southeast",
+  ZA: "af-south", NG: "af-south", KE: "af-south", GH: "af-south",
+  ET: "af-south", TZ: "af-south", UG: "af-south",
+};
+
+export const CURRENCY_META: Record<string, { symbol: string; decimals: number; symbolBefore: boolean }> = {
+  USD: { symbol: "$",   decimals: 2, symbolBefore: true },
+  EUR: { symbol: "€",   decimals: 2, symbolBefore: true },
+  GBP: { symbol: "£",   decimals: 2, symbolBefore: true },
+  AUD: { symbol: "A$",  decimals: 2, symbolBefore: true },
+  CAD: { symbol: "C$",  decimals: 2, symbolBefore: true },
+  NZD: { symbol: "NZ$", decimals: 2, symbolBefore: true },
+  BRL: { symbol: "R$",  decimals: 2, symbolBefore: true },
+  MXN: { symbol: "$",   decimals: 2, symbolBefore: true },
+  ARS: { symbol: "$",   decimals: 2, symbolBefore: true },
+  CLP: { symbol: "$",   decimals: 0, symbolBefore: true },
+  INR: { symbol: "₹",   decimals: 2, symbolBefore: true },
+  JPY: { symbol: "¥",   decimals: 0, symbolBefore: true },
+  KRW: { symbol: "₩",   decimals: 0, symbolBefore: true },
+  CNY: { symbol: "¥",   decimals: 2, symbolBefore: true },
+  CHF: { symbol: "CHF", decimals: 2, symbolBefore: true },
+  SAR: { symbol: "﷼",   decimals: 2, symbolBefore: false },
+  AED: { symbol: "د.إ", decimals: 2, symbolBefore: false },
+  EGP: { symbol: "E£",  decimals: 2, symbolBefore: true },
+  ZAR: { symbol: "R",   decimals: 2, symbolBefore: true },
+  NGN: { symbol: "₦",   decimals: 2, symbolBefore: true },
+  KES: { symbol: "KSh", decimals: 2, symbolBefore: true },
+  GHS: { symbol: "₵",   decimals: 2, symbolBefore: true },
+  RUB: { symbol: "₽",   decimals: 2, symbolBefore: false },
+  TRY: { symbol: "₺",   decimals: 2, symbolBefore: true },
+  NOK: { symbol: "kr",  decimals: 2, symbolBefore: false },
+  SEK: { symbol: "kr",  decimals: 2, symbolBefore: false },
+  DKK: { symbol: "kr",  decimals: 2, symbolBefore: false },
+  COP: { symbol: "$",   decimals: 0, symbolBefore: true },
+};
+
+export const PLAN_PRICE_OVERRIDES: Record<string, { growth: number; pro: number }> = {
+  ZAR: { growth: 14900, pro: 34900 },
+  NGN: { growth: 750000, pro: 1500000 },
+  KES: { growth: 130000, pro: 260000 },
+  BRL: { growth: 4900, pro: 9900 },
+  INR: { growth: 79900, pro: 159900 },
+  MXN: { growth: 16900, pro: 33900 },
+  GBP: { growth: 799,   pro: 1599 },
+  EUR: { growth: 899,   pro: 1799 },
+  AUD: { growth: 1499,  pro: 2999 },
+  CAD: { growth: 1299,  pro: 2599 },
+  JPY: { growth: 1500,  pro: 3000 },
+  KRW: { growth: 13000, pro: 26000 },
+};
+
+export const REGION_PAYMENT_GATEWAY: Record<string, string> = {
+  "us-east":      "stripe",
+  "us-west":      "stripe",
+  "eu-west":      "stripe",
+  "eu-central":   "stripe",
+  "ap-southeast": "stripe",
+  "ap-northeast": "stripe",
+  "af-south":     "both",
+};
+
+export const COUNTRY_TIMEZONE: Record<string, string> = {
+  US: "America/New_York", CA: "America/Toronto", MX: "America/Mexico_City",
+  BR: "America/Sao_Paulo", AR: "America/Argentina/Buenos_Aires",
+  GB: "Europe/London", FR: "Europe/Paris", DE: "Europe/Berlin",
+  IT: "Europe/Rome", ES: "Europe/Madrid", NL: "Europe/Amsterdam",
+  AU: "Australia/Sydney", NZ: "Pacific/Auckland", JP: "Asia/Tokyo",
+  KR: "Asia/Seoul", CN: "Asia/Shanghai", IN: "Asia/Kolkata",
+  SG: "Asia/Singapore", AE: "Asia/Dubai", ZA: "Africa/Johannesburg",
+  NG: "Africa/Lagos", KE: "Africa/Nairobi", EG: "Africa/Cairo",
+};

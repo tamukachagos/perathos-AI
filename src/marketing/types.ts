@@ -18,6 +18,12 @@ export interface MarketingContext {
   planTier: "free" | "growth" | "pro";
   /** Owner email for report delivery */
   ownerEmail?: string;
+  /** BCP-47 locale tag: "en", "es", "pt-BR", "fr", "de", "ar", etc. */
+  locale: string;
+  /** ISO 4217 currency code: "USD", "EUR", "ZAR", etc. */
+  currency: string;
+  /** ISO 3166-1 alpha-2 country code: "US", "DE", "BR", "ZA", etc. */
+  countryCode: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { routeLlm } from "@/integrations/llm";
 import { getRepositories } from "@/lib/db";
 import type { AgentResult, MarketingContext } from "@/marketing/types";
+import { localeSeoInstruction, getSearchEngine } from "@/marketing/localeInstruction";
 
 /** Generate idempotency key for SEO LLM calls. */
 function idem(tenantId: string, type: string): string {
@@ -86,10 +87,16 @@ export async function run(ctx: MarketingContext): Promise<AgentResult> {
 
       actions.push(`Generated sitemap for /${site.slug} (${pages.length + 1} URLs)`);
 
-      // Ping Google
+      // Ping Google (only for markets where Google is the primary search engine)
       const sitemapUrl = `${baseUrl}/sitemap.xml`;
-      await pingGoogle(sitemapUrl);
-      actions.push(`Pinged Google Search Console: ${sitemapUrl}`);
+      const searchEngine = getSearchEngine(ctx.countryCode ?? "ZA");
+      if (searchEngine === "Google" || searchEngine.startsWith("Google")) {
+        await pingGoogle(sitemapUrl);
+        actions.push(`Pinged Google Search Console: ${sitemapUrl}`);
+      } else {
+        // Note: Baidu and Yandex have their own webmaster tools APIs
+        actions.push(`Skipped Google ping for ${ctx.countryCode ?? "ZA"} market (primary engine: ${searchEngine})`);
+      }
 
       // ------------------------------------------------------------------
       // 2. META TAG OPTIMIZATION — generate for each page missing metaDesc
@@ -105,8 +112,10 @@ export async function run(ctx: MarketingContext): Promise<AgentResult> {
       });
 
       for (const page of pagesNeedingMeta) {
+        const locale = ctx.locale ?? "en";
+        const countryCode = ctx.countryCode ?? "ZA";
         const prompt = `Write a 155-character meta description for a ${ctx.industry} business called ${ctx.businessName} in ${ctx.location}, South Africa. Page: ${page.title}.
-Include: main service, location keyword, call to action. Write for Google search results. Exactly 155 characters or fewer.`;
+Include: main service, location keyword, call to action. Write for Google search results. Exactly 155 characters or fewer.${localeSeoInstruction(locale, countryCode)}`;
 
         const outcome = await routeLlm(
           { wallet: repos.wallet, audit: repos.audit, repos },
@@ -131,11 +140,13 @@ Include: main service, location keyword, call to action. Write for Google search
     }
 
     // ------------------------------------------------------------------
-    // 3. KEYWORD OPPORTUNITIES — 10 local SA keywords
+    // 3. KEYWORD OPPORTUNITIES — 10 local keywords
     // ------------------------------------------------------------------
+    const seoLocale = ctx.locale ?? "en";
+    const seoCountryCode = ctx.countryCode ?? "ZA";
     const keywordPrompt = `List 10 high-value Google search keywords for a ${ctx.industry} business in ${ctx.location}, South Africa.
 Include: local modifier + service combinations, "near me" variants, and Zulu or Afrikaans variations if applicable to ${ctx.location}.
-Return ONLY a JSON array of strings, e.g.: ["keyword 1","keyword 2",...]`;
+Return ONLY a JSON array of strings, e.g.: ["keyword 1","keyword 2",...]${localeSeoInstruction(seoLocale, seoCountryCode)}`;
 
     const keywordOutcome = await routeLlm(
       { wallet: repos.wallet, audit: repos.audit, repos },

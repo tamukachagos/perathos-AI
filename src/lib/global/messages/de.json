@@ -1,0 +1,51 @@
+{
+  "nav": {
+    "studio": "Studio", "preview": "Vorschau", "domain": "Domain",
+    "whatsapp": "WhatsApp", "analytics": "Analysen", "bookings": "Termine",
+    "crm": "CRM", "invoicing": "Rechnungen", "pages": "Seiten",
+    "brand": "Marke", "marketing": "Marketing", "reviews": "Bewertungen"
+  },
+  "onboarding": {
+    "title": "Starten Sie Ihr Unternehmen in 2 Minuten online",
+    "subtitle": "Keine technischen Kenntnisse erforderlich. Beschreiben Sie einfach Ihr Unternehmen.",
+    "name": "Unternehmensname", "industry": "Branche",
+    "location": "Stadt, Land", "phone": "WhatsApp / Telefon",
+    "cta": "Jetzt starten", "or": "oder selbst beschreiben",
+    "region_hint": "Ihre Website wird gehostet in"
+  },
+  "booking": {
+    "title": "Termin buchen",
+    "select_service": "Leistung auswählen", "select_date": "Datum wählen",
+    "select_time": "Uhrzeit wählen", "your_name": "Ihr Name",
+    "your_phone": "Telefon / WhatsApp", "submit": "Termin bestätigen",
+    "success": "Termin bestätigt! Sie erhalten in Kürze eine WhatsApp-Bestätigung.",
+    "consent": "Mit der Buchung stimmen Sie zu, dass wir Sie bezüglich Ihres Termins kontaktieren."
+  },
+  "checkout": {
+    "title": "Zahlung abschließen", "pay_now": "Jetzt bezahlen",
+    "order_summary": "Bestellübersicht", "total": "Gesamt",
+    "success": "Zahlung eingegangen! Sie erhalten eine WhatsApp-Bestätigung.",
+    "already_paid": "Diese Bestellung wurde bereits bezahlt."
+  },
+  "invoice": {
+    "invoice_number": "Rechnung Nr.", "due_date": "Fällig",
+    "status_paid": "BEZAHLT", "status_due": "Zahlung ausstehend",
+    "subtotal": "Zwischensumme", "tax": "MwSt.", "total": "Gesamt",
+    "pay_now": "Rechnung bezahlen", "print": "Drucken"
+  },
+  "chat": {
+    "greeting": "Hallo! Willkommen bei {{business}}. Wie können wir Ihnen heute helfen?",
+    "reply_time": "Antwortet üblicherweise innerhalb von Minuten",
+    "book": "Termin buchen", "services": "Leistungen anfragen",
+    "quote": "Angebot einholen", "type_message": "Nachricht schreiben...",
+    "powered_by": "Powered by Perathos"
+  },
+  "reviews": { "section_title": "Was unsere Kunden sagen" },
+  "plans": {
+    "free": "Kostenlos", "growth": "Wachstum", "pro": "Pro",
+    "per_month": "pro Monat",
+    "free_desc": "Ihre erste Website, für immer kostenlos",
+    "growth_desc": "Eigene Domain, WhatsApp-Handel, Social-Media-Tools",
+    "pro_desc": "KI-Agenten-Team, erweiterte Analysen, vorrangiger Support"
+  }
+}
