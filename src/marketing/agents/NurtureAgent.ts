@@ -60,7 +60,7 @@ async function sendNurtureMessage(
  */
 export async function run(ctx: MarketingContext): Promise<AgentResult> {
   const actions: string[] = [];
-  let tokensUsed = 0;
+  const tokensUsed = 0;
   let messagesSent = 0;
 
   try {

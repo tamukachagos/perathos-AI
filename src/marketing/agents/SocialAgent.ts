@@ -47,7 +47,7 @@ function currentWeekBounds(): { start: Date; end: Date } {
  */
 export async function run(ctx: MarketingContext): Promise<AgentResult> {
   const actions: string[] = [];
-  let tokensUsed = 0;
+  const tokensUsed = 0;
   const autoPublish = false; // Default: schedule only, owner must approve
 
   try {
