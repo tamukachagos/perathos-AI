@@ -19,7 +19,7 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { Send, Sparkles, UserRound } from "lucide-react";
 import type { Business } from "@/lib/types";
-import { SITE_TEMPLATES } from "@/lib/templates";
+import { QuickLaunch } from "@/components/dashboard/QuickLaunch";
 import {
   chatReducer,
   emptyChat,
@@ -231,7 +231,8 @@ export function AssistantConsole({
         {state.messages.length === 0 ? (
           <EmptyState
             onPick={(p) => void submit(p)}
-            onApplyTemplate={applyTemplate}
+            onApplyProfile={onApplyProfile}
+            onOpenPreview={onOpenPreview}
           />
         ) : (
           state.messages.map((m) => (
@@ -285,32 +286,56 @@ export function AssistantConsole({
 
 function EmptyState({
   onPick,
-  onApplyTemplate,
+  onApplyProfile,
+  onOpenPreview,
 }: {
   onPick: (prompt: string) => void;
-  onApplyTemplate: (business: Business, label: string) => void;
+  onApplyProfile: (profile: Business) => void;
+  onOpenPreview: () => void;
 }) {
+  const [showQuickLaunch, setShowQuickLaunch] = useState(true);
   return (
     <div className="studio-empty">
       <div className="studio-empty-mark">
         <Sparkles size={22} />
       </div>
       <h2>What would you like to build today?</h2>
-      <p>Pick your industry to get a site ready in seconds, or describe your business below.</p>
-      <div className="studio-templates">
-        {SITE_TEMPLATES.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className="studio-template-btn"
-            onClick={() => onApplyTemplate(t.business, t.label)}
-          >
-            <span className="studio-template-emoji" aria-hidden="true">{t.emoji}</span>
-            <span className="studio-template-label">{t.label}</span>
-          </button>
-        ))}
+      <p>
+        Describe your business in plain words, or ask for a change. I&apos;ll draft
+        it, show you a preview, and only ask you to approve the things that matter.
+      </p>
+
+      {/* 1. QuickLaunch fast-lane card */}
+      {showQuickLaunch ? (
+        <div style={{ width: "100%", maxWidth: 540, marginBottom: 0 }}>
+          <QuickLaunch
+            onApplyProfile={onApplyProfile}
+            onOpenPreview={onOpenPreview}
+            onSkip={() => setShowQuickLaunch(false)}
+          />
+        </div>
+      ) : null}
+
+      {/* 2. Divider */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          width: "100%",
+          maxWidth: 540,
+          margin: "16px 0 8px",
+          color: "var(--muted)",
+          fontSize: 12,
+          fontWeight: 700,
+        }}
+      >
+        <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
+        <span>or describe it yourself</span>
+        <span style={{ flex: 1, height: 1, background: "var(--border)" }} />
       </div>
-      <div className="studio-divider"><span>or describe it yourself</span></div>
+
+      {/* 3. Example prompt buttons */}
       <div className="studio-examples">
         {EXAMPLE_PROMPTS.map((p) => (
           <button key={p} type="button" onClick={() => onPick(p)}>

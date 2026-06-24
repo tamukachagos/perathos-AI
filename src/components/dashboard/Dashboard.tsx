@@ -36,6 +36,7 @@ import { DeployStep } from "./DeployStep";
 import { HostingStep } from "./HostingStep";
 import { GbpStep } from "./GbpStep";
 import { WhatsappCommerce } from "./WhatsappCommerce";
+import { InvoicingDashboard } from "./InvoicingDashboard";
 
 // Maps a gated checklist row to the ActionRouter verb + the payload the approval
 // binds to. Only authenticated sessions can approve (the flow needs a tenant).
@@ -451,6 +452,11 @@ export function Dashboard({
           business={business}
           authenticated={authenticated}
           canSell={Boolean(entitlements.payments)}
+          onNotice={setNotice}
+        />
+
+        <InvoicingDashboard
+          authenticated={authenticated}
           onNotice={setNotice}
         />
 

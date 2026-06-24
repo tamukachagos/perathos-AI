@@ -13,6 +13,26 @@
     {
       "path": "/api/cron/hosting-meter",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/social-dispatch",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/email-dispatch",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-hourly",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/marketing-daily",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/marketing-weekly",
+      "schedule": "0 8 * * 1"
     }
   ]
 }
