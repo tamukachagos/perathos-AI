@@ -23,7 +23,7 @@
     "lighthouse": "node ./node_modules/@lhci/cli/src/cli.js autorun"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.71.0",
+    "@anthropic-ai/sdk": "^0.105.0",
     "@auth/prisma-adapter": "^2.11.2",
     "@prisma/client": "^6.19.3",
     "lucide-react": "^1.20.0",
